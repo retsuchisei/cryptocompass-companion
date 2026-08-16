@@ -76,6 +76,23 @@ underneath anything that edits it, so `Setup.tsx` asks for one paste and then
 proves it took by waiting for a frame. Claiming success without one would be
 worse than asking.
 
+**A tag is the whole trigger.** Pushing `v<version>` builds on a Windows runner
+and publishes the installer, its updater signature, `latest.json` and
+`SHA256SUMS`. Nothing else releases, and nothing releases by hand.
+
+One version is declared in three manifests - `package.json`,
+`src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml` - and they are bumped
+together. Each is read by something different: the installer's name, the
+manifest the updater compares against, and `CARGO_PKG_VERSION`, which is what
+consent is stored against, so a bump that reaches two of the three ships an
+update that is either never offered or never asks again. `npm run check` fails
+when they disagree and the release workflow checks the tag against them.
+
+**The updater's public key is compiled into every installed copy**, so
+replacing the key orphans every install: they stop accepting updates and have
+to be reinstalled by hand. It is `plugins.updater.pubkey` in
+`tauri.conf.json`; the private half is the repository's only Actions secret.
+
 ## Layering
 
 The Rust side keeps its logic in functions that take bytes and return bytes, so

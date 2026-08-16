@@ -1,0 +1,77 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: src-tauri }
+      - run: npm ci
+
+      # Before the build rather than after it: a tag that names one version
+      # while the app names another produces an installer nobody is ever
+      # offered, and finding that out takes ten minutes here and a release
+      # there. That the three manifests agree with each other is `npm run
+      # check`'s job, so one of them is enough to compare the tag against.
+      - name: The tag names the version that ships
+        shell: bash
+        run: |
+          declared="v$(node -p "require('./package.json').version")"
+          if [ "$declared" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not name $declared"
+            exit 1
+          fi
+
+      - run: npm run check
+
+      - name: Authenticode
+        shell: bash
+        env:
+          WINDOWS_CERT: ${{ secrets.WINDOWS_CERT }}
+        run: |
+          if [ -z "$WINDOWS_CERT" ]; then
+            echo "::warning::no signing certificate - shipping an unsigned installer"
+          else
+            echo "signing is configured; see the spec before enabling it"
+            exit 1
+          fi
+
+      - uses: tauri-apps/tauri-action@v0
+        id: publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: ${{ github.ref_name }}
+          releaseDraft: false
+          includeUpdaterJson: true
+
+      # The installer is unsigned, so a checksum is all a careful person has to
+      # go on. It is computed here, over the files that were just published,
+      # rather than by hand afterwards: a checksum taken anywhere but the
+      # machine that built the artifact proves nothing about the artifact.
+      - name: Checksums for what was published
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARTIFACTS: ${{ steps.publish.outputs.artifactPaths }}
+        run: |
+          $lines = foreach ($path in ($env:ARTIFACTS | ConvertFrom-Json)) {
+            $hash = (Get-FileHash -Algorithm SHA256 -Path $path).Hash.ToLower()
+            "$hash  $([System.IO.Path]::GetFileName($path))"
+          }
+          # LF and no BOM, so `sha256sum -c SHA256SUMS` reads it as it stands.
+          [System.IO.File]::WriteAllText("$PWD\SHA256SUMS", ($lines -join "`n") + "`n")
+          Get-Content SHA256SUMS
+          gh release upload $env:GITHUB_REF_NAME SHA256SUMS --clobber
