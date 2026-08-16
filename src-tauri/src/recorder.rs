@@ -118,6 +118,11 @@ struct Running {
 struct Session {
     root: PathBuf,
     collector: Option<String>,
+    /// The install token, when this install has been linked. `None` means the
+    /// collector will refuse us, which is the correct outcome rather than a
+    /// case to work around: an unlinked install records to disk and sends
+    /// nothing.
+    token: Option<String>,
     /// `None` until the game's first frame: a probe that connects and leaves
     /// should not litter the directory.
     log: Mutex<Option<SessionLog>>,
@@ -146,7 +151,12 @@ impl Recorder {
     ///
     /// Starting an already started recorder changes nothing and reports the
     /// port it already holds.
-    pub async fn start(&self, addr: SocketAddr, collector: Option<String>) -> io::Result<u16> {
+    pub async fn start(
+        &self,
+        addr: SocketAddr,
+        collector: Option<String>,
+        token: Option<String>,
+    ) -> io::Result<u16> {
         if let Some(running) = self.running.lock().unwrap().as_ref() {
             return Ok(running.port);
         }
@@ -156,6 +166,7 @@ impl Recorder {
         let session = Arc::new(Session {
             root: self.root.clone(),
             collector,
+            token,
             log: Mutex::new(None),
             upstream: Mutex::new(None),
             counters: Mutex::new(Counters::default()),
@@ -292,7 +303,7 @@ impl Session {
         self.upstream
             .lock()
             .unwrap()
-            .get_or_insert_with(|| Upstream::start(url.clone()))
+            .get_or_insert_with(|| Upstream::start(url.clone(), self.token.clone()))
             .send(text);
     }
 
@@ -441,7 +452,10 @@ mod tests {
     async fn turning_it_on_takes_the_socket_and_turning_it_off_gives_it_back() {
         let dir = tempfile::tempdir().unwrap();
         let recorder = Recorder::new(dir.path().to_path_buf());
-        let port = recorder.start(anywhere_on_loopback(), None).await.unwrap();
+        let port = recorder
+            .start(anywhere_on_loopback(), None, None)
+            .await
+            .unwrap();
 
         let mut game = game_connects(port).await;
         game.send(Message::Text(r#"{"category":"init","name":"t"}"#.into()))
@@ -485,8 +499,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let recorder = Recorder::new(dir.path().to_path_buf());
 
-        let first = recorder.start(anywhere_on_loopback(), None).await.unwrap();
-        let second = recorder.start(anywhere_on_loopback(), None).await.unwrap();
+        let first = recorder
+            .start(anywhere_on_loopback(), None, None)
+            .await
+            .unwrap();
+        let second = recorder
+            .start(anywhere_on_loopback(), None, None)
+            .await
+            .unwrap();
 
         // A second press of a button is not a second listener, and not an
         // orphaned task holding the first session either.
@@ -523,7 +543,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let recorder = Recorder::new(dir.path().to_path_buf());
         let port = recorder
-            .start(anywhere_on_loopback(), Some(url))
+            .start(anywhere_on_loopback(), Some(url), None)
             .await
             .unwrap();
 

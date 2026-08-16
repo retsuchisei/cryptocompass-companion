@@ -1,4 +1,5 @@
 pub mod config;
+pub mod identity;
 pub mod listen;
 pub mod recorder;
 pub mod session;
@@ -48,12 +49,101 @@ struct AppStatus {
 /// The only path that opens the socket. Nothing else calls `Recorder::start`,
 /// and the interface reaches this through the consent screen.
 #[tauri::command]
-async fn start_recording(recorder: State<'_, Recorder>) -> Result<u16, String> {
+async fn start_recording(
+    app: tauri::AppHandle,
+    recorder: State<'_, Recorder>,
+) -> Result<u16, String> {
+    // Read at start rather than held in memory: an install linked while the app
+    // was open should not need a restart to start sending.
+    let token = identity_dir(&app)
+        .and_then(|dir| identity::load(&dir))
+        .map(|stored| stored.token);
+
     recorder
-        .start(recording_addr(), COLLECTOR_URL.map(str::to_string))
+        .start(recording_addr(), COLLECTOR_URL.map(str::to_string), token)
         .await
         .map_err(failure)
 }
+
+/// Where the token lives. `None` only if the platform will not name a config
+/// directory, which is a machine that cannot store anything anyway.
+fn identity_dir(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_config_dir().ok()
+}
+
+/// What the interface is allowed to know about this install: its name, never
+/// its token.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Linked {
+    linked: bool,
+    name: Option<String>,
+}
+
+#[tauri::command]
+fn linked_as(app: tauri::AppHandle) -> Linked {
+    match identity_dir(&app).and_then(|dir| identity::load(&dir)) {
+        Some(stored) => Linked {
+            linked: true,
+            name: Some(stored.name),
+        },
+        None => Linked {
+            linked: false,
+            name: None,
+        },
+    }
+}
+
+/// Start a pairing. The code comes back to be shown; the poll key stays in the
+/// backend, where the interface cannot reach it and cannot leak it.
+#[tauri::command]
+async fn begin_pairing(
+    app: tauri::AppHandle,
+    pending: State<'_, PendingPairing>,
+    name: String,
+) -> Result<identity::Pairing, String> {
+    let _ = &app;
+    let pairing = identity::begin(&identity::site(), &name).await?;
+
+    *pending.0.lock().unwrap() = Some((pairing.poll_key.clone(), name));
+
+    Ok(pairing)
+}
+
+/// Has anybody confirmed yet? `false` is the ordinary answer.
+#[tauri::command]
+async fn poll_pairing(
+    app: tauri::AppHandle,
+    pending: State<'_, PendingPairing>,
+) -> Result<bool, String> {
+    let Some((poll_key, name)) = pending.0.lock().unwrap().clone() else {
+        return Err("nothing is pairing".to_string());
+    };
+
+    let Some(token) = identity::collect(&identity::site(), &poll_key).await? else {
+        return Ok(false);
+    };
+
+    let dir = identity_dir(&app).ok_or_else(|| "no config directory".to_string())?;
+    identity::save(&dir, &identity::Stored { token, name }).map_err(failure)?;
+    *pending.0.lock().unwrap() = None;
+
+    Ok(true)
+}
+
+/// Forget the token on this machine. The install stays listed on the account
+/// page until it is switched off there - which is the honest picture: this end
+/// can forget a credential, only the server can revoke one.
+#[tauri::command]
+fn unlink(app: tauri::AppHandle) -> Result<(), String> {
+    let dir = identity_dir(&app).ok_or_else(|| "no config directory".to_string())?;
+
+    identity::forget(&dir).map_err(failure)
+}
+
+/// The pairing in flight, if any: its poll key and the name it offered.
+#[derive(Default)]
+struct PendingPairing(std::sync::Mutex<Option<(String, String)>>);
 
 /// The port already being taken is the one failure worth naming rather than
 /// relaying.
@@ -185,13 +275,18 @@ pub fn run() {
             // Off. Building the recorder does not open anything - only
             // `start_recording` does, and only the interface calls it.
             app.manage(Recorder::new(sessions));
+            app.manage(PendingPairing::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             start_recording,
             stop_recording,
             status,
-            configure_game
+            configure_game,
+            linked_as,
+            begin_pairing,
+            poll_pairing,
+            unlink
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

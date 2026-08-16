@@ -67,7 +67,9 @@ async fn main() {
 
                 if let Some(url) = &collector {
                     upstream
-                        .get_or_insert_with(|| Upstream::start(url.clone()))
+                        .get_or_insert_with(|| {
+                            Upstream::start(url.clone(), std::env::var("CRYPTOCOMPASS_TOKEN").ok())
+                        })
                         .send(text);
                 }
             }

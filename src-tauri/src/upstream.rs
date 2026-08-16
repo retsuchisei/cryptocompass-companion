@@ -20,6 +20,9 @@ use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
 use tokio::sync::Notify;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::tungstenite::handshake::client::Request;
+use tokio_tungstenite::tungstenite::http::header::{HeaderValue, AUTHORIZATION};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
@@ -68,7 +71,7 @@ impl Upstream {
     /// holds one for exactly as long as recording is on.
     ///
     /// Call it from inside a tokio runtime; Tauri's is one.
-    pub fn start(url: String) -> Upstream {
+    pub fn start(url: String, token: Option<String>) -> Upstream {
         let shared = Arc::new(Shared {
             queue: Mutex::new(VecDeque::new()),
             state: Mutex::new(UpstreamState::Idle),
@@ -76,7 +79,7 @@ impl Upstream {
             stopped: AtomicBool::new(false),
         });
 
-        tokio::spawn(run(url, shared.clone()));
+        tokio::spawn(run(url, token, shared.clone()));
         Upstream { shared }
     }
 
@@ -135,7 +138,25 @@ impl Shared {
 
 /// The task that owns the connection: dial, drain, and on losing either, wait
 /// and dial again.
-async fn run(url: String, shared: Arc<Shared>) {
+/// The upgrade request, with the install token in a header when there is one.
+///
+/// A header rather than the URL, deliberately: Caddy writes the request URI
+/// into its access log, so a token in a path is a token sitting in a log file.
+/// This is possible here and not for the game itself - the game talks to our
+/// local socket, and only this app talks to the collector.
+fn dial(url: &str, token: Option<&str>) -> Option<Request> {
+    let mut request = url.into_client_request().ok()?;
+
+    if let Some(token) = token {
+        let value = HeaderValue::from_str(&format!("Bearer {token}")).ok()?;
+
+        request.headers_mut().insert(AUTHORIZATION, value);
+    }
+
+    Some(request)
+}
+
+async fn run(url: String, token: Option<String>, shared: Arc<Shared>) {
     let mut failures: u32 = 0;
     let mut sent: u64 = 0;
 
@@ -148,7 +169,14 @@ async fn run(url: String, shared: Arc<Shared>) {
 
         shared.set_state(UpstreamState::Connecting);
 
-        if let Ok((mut ws, _)) = tokio_tungstenite::connect_async(url.as_str()).await {
+        let Some(request) = dial(&url, token.as_deref()) else {
+            // A url or a token that cannot become a request will not become one
+            // on the next attempt either.
+            shared.set_state(UpstreamState::Idle);
+            return;
+        };
+
+        if let Ok((mut ws, _)) = tokio_tungstenite::connect_async(request).await {
             failures = 0;
             shared.set_state(UpstreamState::Live { sent });
             pump(&mut ws, &shared, &mut sent).await;
@@ -225,6 +253,7 @@ pub fn backoff_seconds(failures: u32) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::AsyncReadExt;
     use tokio::net::TcpListener;
 
     /// A socket nobody is listening on yet, and the url that reaches it. The
@@ -266,7 +295,7 @@ mod tests {
 
     #[tokio::test]
     async fn frames_queue_while_disconnected_and_flush_on_connect() {
-        let upstream = Upstream::start("ws://127.0.0.1:59999/nothing-here".into());
+        let upstream = Upstream::start("ws://127.0.0.1:59999/nothing-here".into(), None);
         upstream.send("{\"a\":1}".into());
         upstream.send("{\"a\":2}".into());
 
@@ -290,10 +319,82 @@ mod tests {
         );
     }
 
+    /// Reads the raw upgrade request instead of completing it: the claim under
+    /// test is about the bytes on the wire, and a websocket library would hide
+    /// exactly the part that matters.
+    async fn first_request(listener: &TcpListener) -> String {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut seen = Vec::new();
+        let mut chunk = [0_u8; 512];
+
+        while !seen.windows(4).any(|w| w == b"\r\n\r\n") {
+            let read = stream.read(&mut chunk).await.unwrap();
+
+            if read == 0 {
+                break;
+            }
+
+            seen.extend_from_slice(&chunk[..read]);
+        }
+
+        String::from_utf8_lossy(&seen).to_string()
+    }
+
+    #[tokio::test]
+    async fn the_token_travels_in_a_header_and_not_in_the_url() {
+        let (listener, url) = take_a_port().await;
+        let asked = tokio::spawn(async move { first_request(&listener).await });
+
+        let upstream = Upstream::start(url.clone(), Some("a-secret-token".into()));
+        upstream.send("frame".into());
+
+        let request = tokio::time::timeout(Duration::from_secs(5), asked)
+            .await
+            .expect("the collector was never dialled")
+            .unwrap();
+
+        // Lower-cased before comparing: header names are case-insensitive and
+        // the http crate normalises them, so asserting on the casing would be
+        // asserting on somebody else's implementation detail.
+        assert!(
+            request
+                .to_lowercase()
+                .contains("authorization: bearer a-secret-token"),
+            "no bearer header in:\n{request}"
+        );
+
+        // Caddy writes the request URI into its access log, so a token in the
+        // path would be a token in a log file. The header is the whole point.
+        let line = request.lines().next().unwrap_or_default();
+        assert!(
+            !line.contains("a-secret-token"),
+            "the token reached the request line: {line}"
+        );
+    }
+
+    #[tokio::test]
+    async fn without_a_token_no_header_is_sent() {
+        let (listener, url) = take_a_port().await;
+        let asked = tokio::spawn(async move { first_request(&listener).await });
+
+        let upstream = Upstream::start(url, None);
+        upstream.send("frame".into());
+
+        let request = tokio::time::timeout(Duration::from_secs(5), asked)
+            .await
+            .expect("the collector was never dialled")
+            .unwrap();
+
+        assert!(
+            !request.to_lowercase().contains("authorization"),
+            "an unlinked install sent an Authorization header:\n{request}"
+        );
+    }
+
     #[tokio::test]
     async fn nothing_is_dialled_until_there_is_something_to_carry() {
         let (listener, url) = take_a_port().await;
-        let upstream = Upstream::start(url);
+        let upstream = Upstream::start(url, None);
 
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert_eq!(upstream.state(), UpstreamState::Idle);
@@ -312,7 +413,7 @@ mod tests {
         let collector = seen.clone();
         tokio::spawn(async move { accept_and_collect(&listener, &collector).await });
 
-        let upstream = Upstream::start(url);
+        let upstream = Upstream::start(url, None);
         upstream.send("one".into());
         upstream.send("two".into());
         upstream.send("three".into());
@@ -346,7 +447,7 @@ mod tests {
             accept_and_collect(&listener, &collector).await;
         });
 
-        let upstream = Upstream::start(url);
+        let upstream = Upstream::start(url, None);
         upstream.send("one".into());
         assert!(
             within(5, || seen.lock().unwrap().len() == 1).await,
@@ -378,7 +479,7 @@ mod tests {
             noticed.store(true, Ordering::Relaxed);
         });
 
-        let upstream = Upstream::start(url);
+        let upstream = Upstream::start(url, None);
         upstream.send("one".into());
         assert!(within(5, || seen.lock().unwrap().len() == 1).await);
 

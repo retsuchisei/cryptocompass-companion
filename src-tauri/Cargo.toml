@@ -21,6 +21,15 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
+# Pairing talks to our own site over HTTPS, and it happens here rather than in
+# the webview: a page doing it would need the API opened to tauri://localhost,
+# and the token would pass through JavaScript. native-tls rather than a bundled
+# stack, so this shares the one tokio-tungstenite already brings rather than
+# linking a second TLS implementation into the binary.
+reqwest = { version = "0.12", default-features = false, features = [
+  "native-tls",
+  "json",
+] }
 # preserve_order, because a session log is a relay's output: a frame's fields
 # come out in the order the game sent them rather than sorted. It also puts
 # the header's own keys in session.py's order, which is the format we copy.

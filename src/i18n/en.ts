@@ -110,6 +110,20 @@ export const en = {
     "Recording is off, so there is nothing to check. Turn it on from the recording screen, then join a custom match.",
   setupNoFrames:
     "No frames yet. Join a custom match - in ordinary matchmaking and in ranked the game sends nothing.",
+
+  // Linking this install. The token itself never reaches this side of the app:
+  // the Rust half fetches it and writes it to disk.
+  linkTitle: "Account",
+  linkWhy:
+    "Link this install to your account and it can send what it records. Unlinked, it still records - to this machine only.",
+  linkName: "What to call this machine",
+  linkBegin: "Link this install",
+  linkCompare:
+    "The page in your browser shows a code. Check it matches the one above, then confirm there. If they differ, do not confirm: something else is asking.",
+  linkOpenAgain: "Open the page again",
+  linkLinkedAs: (name: string) => `Linked as ${name}.`,
+  linkForget: "Forget the token on this machine",
+  linkFailed: (reason: string) => `Linking did not finish: ${reason}`,
 };
 
 export type Strings = typeof en;

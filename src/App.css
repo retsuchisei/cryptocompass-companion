@@ -334,3 +334,48 @@ dd { margin: 0; font-family: ui-monospace, monospace; font-size: 0.85rem; }
   opacity: 0.7;
 }
 .dismiss:hover { opacity: 1; }
+
+/* The account card.
+ *
+ * The code is the one thing on this screen a person has to compare with
+ * another screen, so it is large, spaced and monospaced - crowded characters
+ * are what make a comparison go wrong.
+ */
+.link-code {
+  margin: 0.75rem 0 0.5rem;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 1.9rem;
+  letter-spacing: 0.3em;
+  color: var(--ink);
+}
+
+.field {
+  display: block;
+  margin: 0.75rem 0;
+}
+
+.field span {
+  display: block;
+  margin-bottom: 0.3rem;
+  color: var(--dim);
+  font-size: 0.85rem;
+}
+
+.field input {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--ground);
+  color: var(--ink);
+  font: inherit;
+}
+
+.field input:focus {
+  outline: none;
+  border-color: var(--signal);
+}
+
+.note.bad {
+  color: var(--signal);
+}

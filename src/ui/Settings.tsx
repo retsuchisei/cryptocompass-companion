@@ -4,6 +4,7 @@ import { LOCALES, LOCALE_NAMES, locale, setLocale, t, type Locale } from "../i18
 import { MODES, type Mode } from "../modes.ts";
 import { checkForUpdate, installUpdate, updateState } from "../updates.ts";
 import { FlagEn, FlagRu } from "./Flags.tsx";
+import { Link, type Backend, type Linked } from "./Link.tsx";
 
 /**
  * Preferences, which are not places.
@@ -22,6 +23,9 @@ export function Settings(props: {
   mode: Mode;
   onMode: (mode: Mode) => void;
   version: string;
+  backend: Backend;
+  linked: Linked;
+  onLinkChanged: () => void;
 }): JSX.Element {
   /**
    * The launch check settles once and then has nothing more to say. Without a
@@ -41,6 +45,12 @@ export function Settings(props: {
   };
   return (
     <section class="screen">
+      <Link
+        backend={props.backend}
+        linked={props.linked}
+        onChanged={props.onLinkChanged}
+      />
+
       <div class="card">
         <h3>{t().settingsLanguage}</h3>
         <div class="choices">

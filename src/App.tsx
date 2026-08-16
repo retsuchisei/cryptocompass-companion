@@ -1,5 +1,6 @@
 import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 import { t } from "./i18n/index.ts";
 import { ASK_EVERY_MS, checkForUpdate, installUpdate, shouldAsk, updateState } from "./updates.ts";
@@ -16,6 +17,7 @@ import { bars, pushSample, sinceLastFrame, slots, type Sample } from "./trace.ts
 import { Consent } from "./ui/Consent.tsx";
 import { Titlebar } from "./ui/Titlebar.tsx";
 import { Settings } from "./ui/Settings.tsx";
+import { type Backend, type Linked, type Pairing } from "./ui/Link.tsx";
 import { Setup } from "./ui/Setup.tsx";
 import { Status } from "./ui/Status.tsx";
 import "./App.css";
@@ -40,8 +42,26 @@ const SCREENS = [
 
 type Screen = (typeof SCREENS)[number]["kind"];
 
+/**
+ * Everything the account card asks of the Rust side. Gathered here because this
+ * file is already the only one that speaks to it, and because a screen that
+ * takes its backend as a value can be looked at without a backend at all.
+ *
+ * `open` goes through the opener plugin rather than window.open: the pairing
+ * page belongs in the browser the person already trusts and is already signed
+ * in to, not in a webview inside this app.
+ */
+const backend: Backend = {
+  linkedAs: () => invoke<Linked>("linked_as"),
+  begin: (name: string) => invoke<Pairing>("begin_pairing", { name }),
+  poll: () => invoke<boolean>("poll_pairing"),
+  unlink: () => invoke<void>("unlink"),
+  open: (url: string) => openUrl(url),
+};
+
 function App() {
   const [status, setStatus] = createSignal<AppStatus | null>(null);
+  const [linked, setLinked] = createSignal<Linked>({ linked: false, name: null });
   const [mode, setMode] = createSignal<Mode>(MODES[0]);
   const [screen, setScreen] = createSignal<Screen>("record");
   const [accepted, setAccepted] = createSignal(false);
@@ -87,7 +107,21 @@ function App() {
   // wrong about how it is actually used. A tournament evening leaves the window
   // open for hours, and a fix shipped in the middle of one would reach nobody
   // until they happened to restart.
+  /** Asked at launch and after linking or forgetting, which is every moment it
+   * can change. Nothing polls it: a token does not appear on its own. */
+  const refreshLinked = async () => {
+    try {
+      setLinked(await backend.linkedAs());
+    } catch {
+      // A backend that cannot answer leaves the card saying "not linked",
+      // which is the safe half to be wrong about: it offers to link again
+      // rather than claiming a link that may not exist.
+    }
+  };
+
   onMount(() => {
+    void refreshLinked();
+
     // At launch an update installs itself. Nothing is in progress yet, so
     // there is nothing to interrupt, and a tester one build behind is a bug
     // report about code nobody is running any more.
@@ -238,7 +272,14 @@ function App() {
                     />
                   </Match>
                   <Match when={screen() === "settings"}>
-                    <Settings mode={mode()} onMode={setMode} version={current().version} />
+                    <Settings
+                      mode={mode()}
+                      onMode={setMode}
+                      version={current().version}
+                      backend={backend}
+                      linked={linked()}
+                      onLinkChanged={() => void refreshLinked()}
+                    />
                   </Match>
                   <Match when={true}>
                     <Status
