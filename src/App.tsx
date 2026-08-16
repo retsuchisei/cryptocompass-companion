@@ -1,7 +1,8 @@
-import { createSignal, For, onCleanup, Show } from "solid-js";
+import { createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 
 import { LOCALES, LOCALE_NAMES, locale, setLocale, t } from "./i18n/index.ts";
+import { checkForUpdate, installUpdate, updateState } from "./updates.ts";
 import { MODES, type Mode } from "./modes.ts";
 import { consentGiven, rememberConsent, type Status as AppStatus } from "./state.ts";
 import { Consent } from "./ui/Consent.tsx";
@@ -35,6 +36,24 @@ function App() {
   const [accepted, setAccepted] = createSignal(false);
   const [configuredPath, setConfiguredPath] = createSignal<string | null>(null);
   const [failure, setFailure] = createSignal<string | null>(null);
+
+  // Narrowings rather than casts inside the markup: `keyed` wants a value, and
+  // a union member's field is only reachable once the kind is known.
+  const ready = () => {
+    const state = updateState();
+    return state.kind === "ready" ? state.version : null;
+  };
+
+  const failedReason = () => {
+    const state = updateState();
+    return state.kind === "failed" ? state.reason : null;
+  };
+
+  // Asked once, on launch, and never again on a timer: this app is opened for
+  // a match and closed afterwards, so a poll would spend its life asking a
+  // question nobody is waiting on. The button in the failure state is the
+  // second ask.
+  onMount(() => void checkForUpdate());
 
   async function refresh() {
     try {
@@ -175,6 +194,34 @@ function App() {
             </Show>
           </Show>
         )}
+      </Show>
+
+      {/* Below the screens rather than above them: an update is worth
+          offering, never worth standing between somebody and the thing they
+          opened the app to do. */}
+      <Show when={updateState().kind !== "idle" && updateState().kind !== "none"}>
+        <p class="update">
+          <Switch>
+            <Match when={updateState().kind === "checking"}>{t().updateChecking}</Match>
+            <Match when={updateState().kind === "installing"}>{t().updateInstalling}</Match>
+            <Match when={ready()} keyed>
+              {(version) => (
+                <>
+                  {t().updateReady(version)}{" "}
+                  <button onClick={() => void installUpdate()}>{t().updateInstall}</button>
+                </>
+              )}
+            </Match>
+            <Match when={failedReason()} keyed>
+              {(reason) => (
+                <>
+                  {t().updateFailed(reason)}{" "}
+                  <button onClick={() => void checkForUpdate()}>{t().updateRecheck}</button>
+                </>
+              )}
+            </Match>
+          </Switch>
+        </p>
       </Show>
 
       <Show when={failure()} keyed>

@@ -17,6 +17,12 @@ export const ru: Partial<Strings> = {
 
   screenRecord: "Запись",
   screenSetup: "Настройка игры",
+  updateChecking: "Проверяю обновления...",
+  updateReady: (version: string) => `Доступна версия ${version}.`,
+  updateInstall: "Установить и перезапустить",
+  updateInstalling: "Скачиваю и устанавливаю...",
+  updateFailed: (reason: string) => `Не удалось проверить обновления: ${reason}`,
+  updateRecheck: "Проверить ещё раз",
   consentTitle: "Прежде чем включить запись",
   consentLobby:
     "Поток LiveAPI описывает весь лобби, а не только вас: события матча и действия всех игроков, которые в нём находятся. Включая запись, вы отправляете данные и о них тоже.",

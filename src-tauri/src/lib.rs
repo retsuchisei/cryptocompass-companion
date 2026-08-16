@@ -142,6 +142,12 @@ mod tests {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        // The updater is the reason the signing key exists. Without these two
+        // lines the app is signed, its manifest is published, and nothing ever
+        // reads either - which is exactly the state v0.1.0 shipped in.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        // Restarting is how an installed update takes effect.
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             // Sessions live beside the app's own data, not in Documents: they
             // are the app's files, and a match is worth keeping when the

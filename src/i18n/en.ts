@@ -23,6 +23,12 @@ export const en = {
 
   screenRecord: "Recording",
   screenSetup: "Setting the game up",
+  updateChecking: "Checking for updates...",
+  updateReady: (version: string) => `Version ${version} is available.`,
+  updateInstall: "Install and restart",
+  updateInstalling: "Downloading and installing...",
+  updateFailed: (reason: string) => `Could not check for updates: ${reason}`,
+  updateRecheck: "Check again",
   consentTitle: "Before you turn recording on",
   consentLobby:
     "The LiveAPI stream describes the whole lobby, not only you: match events and what every player in it does. Turning recording on sends their data too.",
