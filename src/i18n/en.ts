@@ -37,6 +37,7 @@ export const en = {
   settingsUpdates: "Updates",
   updateNone: "This is the newest build.",
   updateCheck: "Check for updates",
+  dismiss: "Dismiss",
   navSettings: "Settings",
   settingsLanguage: "Language",
   settingsSeat: "Seat",

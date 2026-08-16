@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 
 import {
   CONSENT_KEY,
@@ -9,8 +9,7 @@ import {
   recordingOf,
   rememberConsent,
   type ConsentStore,
-  type Status,
-} from "./state.ts";
+  type Status, afterPoll } from "./state.ts";
 
 /**
  * localStorage's two methods and nothing else, so what consent is worth can be
@@ -121,4 +120,19 @@ test("the launch option is proven by a frame, never by having asked", () => {
     { proven: false, reason: "silent" },
     "a frame with no time behind it is not evidence of anything",
   );
+});
+
+describe("which failure a successful poll clears", () => {
+  test("its own, because that is what it has evidence about", () => {
+    assert.equal(afterPoll({ from: "poll", text: "unreachable" }), null);
+  });
+
+  test("never an action's - this is the bug where the error flashed and left", () => {
+    const problem = { from: "action" as const, text: "port in use" };
+    assert.deepEqual(afterPoll(problem), problem);
+  });
+
+  test("nothing to clear is nothing", () => {
+    assert.equal(afterPoll(null), null);
+  });
 });

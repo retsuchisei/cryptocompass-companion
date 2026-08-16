@@ -31,6 +31,7 @@ export const ru: Partial<Strings> = {
   settingsUpdates: "Обновления",
   updateNone: "Это самая свежая сборка.",
   updateCheck: "Проверить обновления",
+  dismiss: "Скрыть",
   navSettings: "Настройки",
   settingsLanguage: "Язык",
   settingsSeat: "Место",

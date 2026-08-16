@@ -31,6 +31,28 @@ export type UpstreamReport = {
 
 export type Recording = { on: false } | { on: true; since: number };
 
+/**
+ * Something that went wrong, and which of the two kinds it is.
+ *
+ * They are not the same and must not clear each other. The status poll runs
+ * every second and knows only whether it could reach the recorder; an action
+ * failing - starting, stopping, writing the game's config - is a different
+ * fact, and the next successful poll is not evidence against it.
+ */
+export type Failure = { from: "poll" | "action"; text: string };
+
+/**
+ * What survives a poll that succeeded.
+ *
+ * A poll clears its own complaint and nothing else. Clearing an action's
+ * failure here is how "recording did not start" became a message that appeared
+ * for one frame and then erased itself, leaving the button looking as though
+ * it had worked.
+ */
+export function afterPoll(failure: Failure | null): Failure | null {
+  return failure?.from === "action" ? failure : null;
+}
+
 /** Consent carries the version that obtained it, and nothing else. */
 export type Consent = { version: string };
 

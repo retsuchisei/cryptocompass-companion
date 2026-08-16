@@ -4,7 +4,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { t } from "./i18n/index.ts";
 import { ASK_EVERY_MS, checkForUpdate, installUpdate, shouldAsk, updateState } from "./updates.ts";
 import { MODES, type Mode } from "./modes.ts";
-import { consentGiven, rememberConsent, type Status as AppStatus } from "./state.ts";
+import {
+  afterPoll,
+  consentGiven,
+  rememberConsent,
+  type Failure,
+  type Status as AppStatus,
+} from "./state.ts";
 import { bars, pushSample, sinceLastFrame, slots, type Sample } from "./trace.ts";
 import { Consent } from "./ui/Consent.tsx";
 import { Titlebar } from "./ui/Titlebar.tsx";
@@ -39,7 +45,7 @@ function App() {
   const [screen, setScreen] = createSignal<Screen>("record");
   const [accepted, setAccepted] = createSignal(false);
   const [configuredPath, setConfiguredPath] = createSignal<string | null>(null);
-  const [failure, setFailure] = createSignal<string | null>(null);
+  const [failure, setFailure] = createSignal<Failure | null>(null);
   const [history, setHistory] = createSignal<Sample[]>([]);
   const [now, setNow] = createSignal(Date.now());
 
@@ -94,9 +100,9 @@ function App() {
       setStatus(next);
       setNow(Date.now());
       setHistory((was) => pushSample(was, { at: Date.now(), frames: next.frames }));
-      setFailure(null);
+      setFailure(afterPoll);
     } catch (error) {
-      setFailure(String(error));
+      setFailure({ from: "poll", text: String(error) });
     }
   }
 
@@ -121,8 +127,9 @@ function App() {
 
     try {
       await invoke("start_recording");
+      setFailure(null);
     } catch (error) {
-      setFailure(String(error));
+      setFailure({ from: "action", text: String(error) });
     }
 
     await refresh();
@@ -131,8 +138,9 @@ function App() {
   async function stop() {
     try {
       await invoke("stop_recording");
+      setFailure(null);
     } catch (error) {
-      setFailure(String(error));
+      setFailure({ from: "action", text: String(error) });
     }
 
     await refresh();
@@ -145,7 +153,7 @@ function App() {
       setFailure(null);
     } catch (error) {
       setConfiguredPath(null);
-      setFailure(String(error));
+      setFailure({ from: "action", text: String(error) });
     }
   }
 
@@ -250,8 +258,22 @@ function App() {
           )}
         </Show>
 
+        {/* Stays until it is dismissed or the same action succeeds. A message
+            that erases itself is worse than no message: the button looks as
+            though it worked. */}
         <Show when={failure()} keyed>
-          {(text) => <p class="failure">{text}</p>}
+          {(problem) => (
+            <p class="failure">
+              <span>{problem.text}</span>
+              <button
+                class="dismiss"
+                aria-label={t().dismiss}
+                onClick={() => setFailure(null)}
+              >
+                {"\u00d7"}
+              </button>
+            </p>
+          )}
         </Show>
       </section>
       </div>

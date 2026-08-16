@@ -319,3 +319,18 @@ dd { margin: 0; font-family: ui-monospace, monospace; font-size: 0.85rem; }
    option took, so it reads as a result rather than as another instruction. */
 .proof { margin: 0.5rem 0 0; font-size: 0.85rem; color: var(--faint); }
 .proof.proven { color: var(--mark); }
+
+.failure span { flex: 1; min-width: 0; }
+.dismiss {
+  flex: none;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 0.2rem;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.dismiss:hover { opacity: 1; }
