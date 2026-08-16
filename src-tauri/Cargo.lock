@@ -632,7 +632,7 @@ dependencies = [
 
 [[package]]
 name = "cryptocompass-companion"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "chrono",
  "flate2",
