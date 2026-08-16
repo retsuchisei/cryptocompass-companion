@@ -244,3 +244,8 @@ dd { margin: 0; font-family: ui-monospace, monospace; font-size: 0.85rem; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* The setup screen's last line is the only proof there is that the launch
+   option took, so it reads as a result rather than as another instruction. */
+.proof { margin: 0.5rem 0 0; font-size: 0.85rem; color: var(--faint); }
+.proof.proven { color: var(--mark); }

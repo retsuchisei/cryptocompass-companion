@@ -46,12 +46,12 @@ export const ru: Partial<Strings> = {
   statusRecording: "Идёт запись",
   statusStopped: "Запись выключена",
   statusSince: "Включена",
-  statusFrames: "Кадров получено",
+  statusFrames: "Записано",
   statusLastFrame: "Последний кадр",
   statusNoFrameYet: "пока нет",
   statusSession: "Сессия",
   statusNoSession: "не начата",
-  statusUpstream: "Выгрузка",
+  statusUpstream: "Ушло к нам",
   statusNoFramesHint:
     "Кадров пока нет. Игра присылает их только в кастомном матче и только если LiveAPI включён в параметрах запуска.",
   statusOrganiserNote:
@@ -60,28 +60,31 @@ export const ru: Partial<Strings> = {
   statusStop: "Остановить запись",
   statusVersion: (version: string) => `версия ${version}`,
 
-  upstreamOff: "не настроена, запись только на этот компьютер",
-  upstreamIdle: "ждёт первый кадр",
+  upstreamOff: "никуда - эта сборка держит всё на твоём компьютере",
+  upstreamIdle: "пока ничего",
   upstreamConnecting: (queued: number) =>
-    queued > 0 ? `подключается, в очереди ${queued}` : "подключается",
+    queued > 0 ? `подключается, ждёт ${queued}` : "подключается",
   upstreamLive: (sent: number, queued: number) =>
-    queued > 0 ? `отправлено ${sent}, в очереди ${queued}` : `отправлено ${sent}`,
-  upstreamRetrying: (seconds: number, failures: number, queued: number) =>
+    queued > 0 ? `${sent}, ждёт ${queued}` : `${sent}`,
+  upstreamRetrying: (seconds: number, queued: number) =>
     queued > 0
-      ? `нет связи, повтор через ${seconds} с (неудач: ${failures}), в очереди ${queued}`
-      : `нет связи, повтор через ${seconds} с (неудач: ${failures})`,
+      ? `нет связи, повтор через ${seconds} с, ждёт ${queued}`
+      : `нет связи, повтор через ${seconds} с`,
 
   setupTitle: "Настройка игры",
+  setupStepOne: "Шаг 1",
+  setupStepTwo: "Шаг 2",
+  setupStepThree: "Шаг 3",
   setupStep1:
-    "Шаг 1. Приложение пропишет игре, куда отправлять поток - на этот компьютер, в это приложение. Имя ниже игра запишет в свои логи; подойдёт ваш ник.",
+    "Приложение пропишет игре, куда отправлять поток - на этот компьютер, в это приложение. Имя ниже игра запишет в свои логи; подойдёт ваш ник.",
   setupConfigure: "Настроить игру",
   setupWritten: (path: string) => `Записано: ${path}`,
   setupStep2:
-    "Шаг 2. Один раз добавьте это в параметры запуска игры (EA app: Manage, View properties, Advanced launch properties; Steam: свойства, параметры запуска) и перезапустите её. Приложение не может сделать это за вас: параметры хранит лаунчер и перезаписывает их по-своему.",
+    "Один раз добавьте это в параметры запуска игры (EA app: Manage, View properties, Advanced launch properties; Steam: свойства, параметры запуска) и перезапустите её. Приложение не может сделать это за вас: параметры хранит лаунчер и перезаписывает их по-своему.",
   setupCopy: "Скопировать",
   setupCopied: "Скопировано.",
   setupStep3:
-    "Шаг 3. Проверка. Мы не можем прочитать параметры запуска, поэтому единственное доказательство - пришедший кадр.",
+    "Проверка. Мы не можем прочитать параметры запуска, поэтому единственное доказательство - пришедший кадр.",
   setupProven: (at: string) =>
     `Игра присылает кадры, последний в ${at}. Всё настроено.`,
   setupNotListening:

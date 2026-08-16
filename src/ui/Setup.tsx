@@ -55,43 +55,49 @@ export function Setup(props: {
 
   return (
     <section class="screen">
-      <h2>{t().setupTitle}</h2>
-
-      <p>{t().setupStep1}</p>
-
-      <div class="row">
-        <input
-          class="name"
-          value={sessionName()}
-          onInput={(event) => setSessionName(event.currentTarget.value)}
-        />
-        <button
-          class="primary"
-          disabled={sessionName().trim() === ""}
-          onClick={() => props.onConfigure(sessionName().trim())}
-        >
-          {t().setupConfigure}
-        </button>
+      <div class="card">
+        <h3>{t().setupStepOne}</h3>
+        <p class="note">{t().setupStep1}</p>
+        <div class="row">
+          <input
+            class="name"
+            value={sessionName()}
+            onInput={(event) => setSessionName(event.currentTarget.value)}
+          />
+          <button
+            class="btn primary"
+            disabled={sessionName().trim() === ""}
+            onClick={() => props.onConfigure(sessionName().trim())}
+          >
+            {t().setupConfigure}
+          </button>
+        </div>
+        <Show when={props.configuredPath} keyed>
+          {(path) => <p class="note">{t().setupWritten(path)}</p>}
+        </Show>
       </div>
 
-      <Show when={props.configuredPath} keyed>
-        {(path) => <p class="note">{t().setupWritten(path)}</p>}
-      </Show>
-
-      <p>{t().setupStep2}</p>
-
-      <div class="row">
-        <input class="option" readonly value={LAUNCH_OPTION} ref={field} />
-        <button onClick={() => void copy()}>{t().setupCopy}</button>
+      <div class="card">
+        <h3>{t().setupStepTwo}</h3>
+        <p class="note">{t().setupStep2}</p>
+        <div class="row">
+          <input class="option" readonly value={LAUNCH_OPTION} ref={field} />
+          <button class="btn" onClick={() => void copy()}>
+            {t().setupCopy}
+          </button>
+        </div>
+        <Show when={copied()}>
+          <p class="note">{t().setupCopied}</p>
+        </Show>
       </div>
 
-      <Show when={copied()}>
-        <p class="note">{t().setupCopied}</p>
-      </Show>
-
-      <p>{t().setupStep3}</p>
-
-      <p class="note">{proofLabel()}</p>
+      <div class="card">
+        <h3>{t().setupStepThree}</h3>
+        <p class="note">{t().setupStep3}</p>
+        <p class="proof" classList={{ proven: launchProof(props.status).proven }}>
+          {proofLabel()}
+        </p>
+      </div>
     </section>
   );
 }

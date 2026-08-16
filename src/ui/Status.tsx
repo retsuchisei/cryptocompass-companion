@@ -80,10 +80,6 @@ function upstreamLabel(upstream: UpstreamReport): string {
     case "live":
       return t().upstreamLive(upstream.sent, upstream.pending);
     case "retrying":
-      return t().upstreamRetrying(
-        upstream.retryInSeconds,
-        upstream.failures,
-        upstream.pending,
-      );
+      return t().upstreamRetrying(upstream.retryInSeconds, upstream.pending);
   }
 }

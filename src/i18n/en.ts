@@ -52,12 +52,12 @@ export const en = {
   statusRecording: "Recording",
   statusStopped: "Recording is off",
   statusSince: "Started",
-  statusFrames: "Frames received",
+  statusFrames: "Recorded",
   statusLastFrame: "Last frame",
   statusNoFrameYet: "none yet",
   statusSession: "Session",
   statusNoSession: "not started",
-  statusUpstream: "Upload",
+  statusUpstream: "Sent to us",
   statusNoFramesHint:
     "No frames yet. The game sends them only in a custom match, and only if LiveAPI is enabled in its launch options.",
   statusOrganiserNote:
@@ -66,30 +66,33 @@ export const en = {
   statusStop: "Stop recording",
   statusVersion: (version: string) => `version ${version}`,
 
-  upstreamOff: "not configured, recording to this computer only",
-  upstreamIdle: "waiting for the first frame",
+  upstreamOff: "nowhere - this build keeps everything on your computer",
+  upstreamIdle: "nothing yet",
   upstreamConnecting: (queued: number) =>
-    queued > 0 ? `connecting, ${queued} queued` : "connecting",
+    queued > 0 ? `connecting, ${queued} waiting` : "connecting",
   // Sent, not delivered: v1 has no acknowledgement, so a frame handed over
   // just before a drop may or may not have landed and this end cannot tell.
   upstreamLive: (sent: number, queued: number) =>
-    queued > 0 ? `${sent} sent, ${queued} queued` : `${sent} sent`,
-  upstreamRetrying: (seconds: number, failures: number, queued: number) =>
+    queued > 0 ? `${sent}, ${queued} waiting` : `${sent}`,
+  upstreamRetrying: (seconds: number, queued: number) =>
     queued > 0
-      ? `no connection, retrying in ${seconds}s (failures: ${failures}), ${queued} queued`
-      : `no connection, retrying in ${seconds}s (failures: ${failures})`,
+      ? `no connection, trying again in ${seconds}s, ${queued} waiting`
+      : `no connection, trying again in ${seconds}s`,
 
   setupTitle: "Setting the game up",
+  setupStepOne: "Step 1",
+  setupStepTwo: "Step 2",
+  setupStepThree: "Step 3",
   setupStep1:
-    "Step 1. The app tells the game where to send its stream - to this computer, to this app. The name below is what the game writes in its own logs; your nickname will do.",
+    "The app tells the game where to send its stream - to this computer, to this app. The name below is what the game writes in its own logs; your nickname will do.",
   setupConfigure: "Configure the game",
   setupWritten: (path: string) => `Written: ${path}`,
   setupStep2:
-    "Step 2. Add this to the game's launch options once (EA app: Manage, View properties, Advanced launch properties; Steam: properties, launch options) and restart it. The app cannot do this for you: the launcher keeps those options and rewrites them its own way.",
+    "Add this to the game's launch options once (EA app: Manage, View properties, Advanced launch properties; Steam: properties, launch options) and restart it. The app cannot do this for you: the launcher keeps those options and rewrites them its own way.",
   setupCopy: "Copy",
   setupCopied: "Copied.",
   setupStep3:
-    "Step 3. Proof. We cannot read the launch options, so the only proof is a frame that arrived.",
+    "Proof. We cannot read the launch options, so the only proof is a frame that arrived.",
   setupProven: (at: string) =>
     `The game is sending frames, the last at ${at}. Everything is set up.`,
   setupNotListening:

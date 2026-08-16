@@ -5,24 +5,30 @@ import { t } from "../i18n/index.ts";
 /**
  * The one screen that can turn recording on.
  *
- * Every word of it comes from the catalogue. Consent read in a language the
- * reader merely copes with is not consent, which is why this app follows the
- * browser's language rather than greeting everyone in English the way the site
- * does.
+ * It is a screen rather than a dialog because it is not an interruption: it is
+ * the first thing this app has to say, and there is nothing behind it worth
+ * seeing first. Every word comes from the catalogue - consent read in a
+ * language the reader merely copes with is not consent.
  */
 export function Consent(props: { onAccept: () => void }): JSX.Element {
   return (
     <section class="screen">
-      <h2>{t().consentTitle}</h2>
+      <div class="card">
+        <p>{t().consentLobby}</p>
+      </div>
+      <div class="card">
+        <p>{t().consentLocalFirst}</p>
+      </div>
+      <div class="card">
+        <p>{t().consentOffUntil}</p>
+        <p class="note">{t().consentCustomOnly}</p>
+      </div>
 
-      <p>{t().consentLobby}</p>
-      <p>{t().consentLocalFirst}</p>
-      <p>{t().consentOffUntil}</p>
-      <p class="note">{t().consentCustomOnly}</p>
-
-      <button class="primary" onClick={() => props.onAccept()}>
-        {t().consentAccept}
-      </button>
+      <div class="actions">
+        <button class="btn primary" onClick={() => props.onAccept()}>
+          {t().consentAccept}
+        </button>
+      </div>
     </section>
   );
 }
