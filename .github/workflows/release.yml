@@ -51,6 +51,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          # The key has no passphrase, and the variable is still required:
+          # 2.11 prompts for one when it is unset, which on a runner is
+          # "failed to decode secret key: incorrect updater private key
+          # password: Device not configured" after the whole build.
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           tagName: ${{ github.ref_name }}
           releaseName: ${{ github.ref_name }}
@@ -61,17 +66,33 @@ jobs:
       # go on. It is computed here, over the files that were just published,
       # rather than by hand afterwards: a checksum taken anywhere but the
       # machine that built the artifact proves nothing about the artifact.
+      #
+      # Node rather than a shell, because the paths the action reports are
+      # Windows paths and this is the one interpreter on the runner that reads
+      # them the same way the runner's own tools wrote them.
       - name: Checksums for what was published
-        shell: pwsh
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ARTIFACTS: ${{ steps.publish.outputs.artifactPaths }}
         run: |
-          $lines = foreach ($path in ($env:ARTIFACTS | ConvertFrom-Json)) {
-            $hash = (Get-FileHash -Algorithm SHA256 -Path $path).Hash.ToLower()
-            "$hash  $([System.IO.Path]::GetFileName($path))"
+          node - <<'EOF'
+          import { createHash } from "node:crypto";
+          import { readFileSync, writeFileSync } from "node:fs";
+          import { basename } from "node:path";
+
+          const published = JSON.parse(process.env.ARTIFACTS ?? "[]");
+          if (published.length === 0) {
+            throw new Error("the release published nothing to take a checksum of");
           }
-          # LF and no BOM, so `sha256sum -c SHA256SUMS` reads it as it stands.
-          [System.IO.File]::WriteAllText("$PWD\SHA256SUMS", ($lines -join "`n") + "`n")
-          Get-Content SHA256SUMS
-          gh release upload $env:GITHUB_REF_NAME SHA256SUMS --clobber
+
+          const lines = published.map((path) => {
+            const sha256 = createHash("sha256").update(readFileSync(path)).digest("hex");
+            return `${sha256}  ${basename(path)}`;
+          });
+
+          // LF and no BOM, so `sha256sum -c SHA256SUMS` reads it as it stands.
+          writeFileSync("SHA256SUMS", lines.join("\n") + "\n");
+          console.log(lines.join("\n"));
+          EOF
+          gh release upload "$GITHUB_REF_NAME" SHA256SUMS --clobber
