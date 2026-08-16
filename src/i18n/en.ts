@@ -38,6 +38,8 @@ export const en = {
   updateNone: "This is the newest build.",
   updateCheck: "Check for updates",
   dismiss: "Dismiss",
+  errorPortInUse:
+    "Port 7777 is already taken, so the game has nowhere to connect. Another copy of this app is the usual reason - close it and try again.",
   navSettings: "Settings",
   settingsLanguage: "Language",
   settingsSeat: "Seat",

@@ -1,6 +1,6 @@
 [package]
 name = "cryptocompass-companion"
-version = "0.1.7"
+version = "0.1.8"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -50,6 +50,9 @@ chrono = { version = "0.4", default-features = false, features = ["now", "std"] 
 flate2 = "1"
 tauri-plugin-updater = "2.10.1"
 tauri-plugin-process = "2.3.1"
+# One window, because two would race for 127.0.0.1:7777 and the second would
+# always lose - which is exactly the failure a tester hit and could not read.
+tauri-plugin-single-instance = "2.4.3"
 
 [dev-dependencies]
 # The session tests write real files. The format is bytes on disk, so a fake

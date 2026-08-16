@@ -7,6 +7,7 @@ import { MODES, type Mode } from "./modes.ts";
 import {
   afterPoll,
   consentGiven,
+  PORT_IN_USE,
   rememberConsent,
   type Failure,
   type Status as AppStatus,
@@ -274,7 +275,7 @@ function App() {
         <Show when={failure()} keyed>
           {(problem) => (
             <p class="failure">
-              <span>{problem.text}</span>
+              <span>{problem.text === PORT_IN_USE ? t().errorPortInUse : problem.text}</span>
               <button
                 class="dismiss"
                 aria-label={t().dismiss}

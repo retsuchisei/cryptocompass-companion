@@ -49,6 +49,9 @@ export type Failure = { from: "poll" | "action"; text: string };
  * for one frame and then erased itself, leaving the button looking as though
  * it had worked.
  */
+/** The one failure the recorder names rather than relaying. */
+export const PORT_IN_USE = "port-in-use";
+
 export function afterPoll(failure: Failure | null): Failure | null {
   return failure?.from === "action" ? failure : null;
 }

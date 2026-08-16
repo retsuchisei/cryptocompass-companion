@@ -52,8 +52,28 @@ async fn start_recording(recorder: State<'_, Recorder>) -> Result<u16, String> {
     recorder
         .start(recording_addr(), COLLECTOR_URL.map(str::to_string))
         .await
-        .map_err(|error| error.to_string())
+        .map_err(failure)
 }
+
+/// The port already being taken is the one failure worth naming rather than
+/// relaying.
+///
+/// The operating system's own words arrive in the language Windows was
+/// installed in, which need not be the one the interface is speaking, and they
+/// describe a socket rather than what to do about it. Everything else is
+/// passed through: an unnamed error read literally beats a guess dressed up as
+/// an explanation.
+fn failure(error: std::io::Error) -> String {
+    if error.kind() == std::io::ErrorKind::AddrInUse {
+        return PORT_IN_USE.to_string();
+    }
+
+    error.to_string()
+}
+
+/// The code the interface translates. A code rather than a sentence, so the
+/// wording lives in the catalogues with every other sentence.
+const PORT_IN_USE: &str = "port-in-use";
 
 /// Point the game at this app, and answer with the file's path so the screen
 /// can name what was touched. It writes one file and nothing else: the launch
@@ -141,6 +161,15 @@ mod tests {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // First, as the plugin requires: a second launch has to be turned away
+        // before anything else has begun. It raises the window already open
+        // rather than starting a rival that cannot bind the port.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         // The updater is the reason the signing key exists. Without these two
         // lines the app is signed, its manifest is published, and nothing ever

@@ -32,6 +32,8 @@ export const ru: Partial<Strings> = {
   updateNone: "Это самая свежая сборка.",
   updateCheck: "Проверить обновления",
   dismiss: "Скрыть",
+  errorPortInUse:
+    "Порт 7777 уже занят, и игре некуда подключаться. Обычно это вторая копия этого приложения - закрой её и попробуй снова.",
   navSettings: "Настройки",
   settingsLanguage: "Язык",
   settingsSeat: "Место",
