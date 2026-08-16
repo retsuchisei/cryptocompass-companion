@@ -1,3 +1,4 @@
+pub mod config;
 pub mod listen;
 pub mod recorder;
 pub mod session;
@@ -22,6 +23,17 @@ const LOCAL_PORT: u16 = 7777;
 /// broken one.
 const COLLECTOR_URL: Option<&str> = option_env!("CRYPTOCOMPASS_COLLECTOR_URL");
 
+/// The socket the recorder takes, and the address the game is told to dial.
+/// One constant behind both, because a config naming a port nothing holds
+/// fails as silence: the game connects to nobody and reports nothing.
+fn recording_addr() -> SocketAddr {
+    SocketAddr::from(([127, 0, 0, 1], LOCAL_PORT))
+}
+
+fn local_url() -> String {
+    format!("ws://{}", recording_addr())
+}
+
 /// The recorder's own report, plus the one thing only the binary knows.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,12 +50,23 @@ struct AppStatus {
 #[tauri::command]
 async fn start_recording(recorder: State<'_, Recorder>) -> Result<u16, String> {
     recorder
-        .start(
-            SocketAddr::from(([127, 0, 0, 1], LOCAL_PORT)),
-            COLLECTOR_URL.map(str::to_string),
-        )
+        .start(recording_addr(), COLLECTOR_URL.map(str::to_string))
         .await
         .map_err(|error| error.to_string())
+}
+
+/// Point the game at this app, and answer with the file's path so the screen
+/// can name what was touched. It writes one file and nothing else: the launch
+/// option is not ours to set, and the interface asks for that paste.
+#[tauri::command]
+fn configure_game(session_name: String) -> Result<String, String> {
+    let path = config::config_path()
+        .ok_or_else(|| "no USERPROFILE, so the game's config cannot be found".to_string())?;
+
+    config::write_config(&path, &local_url(), &session_name)
+        .map_err(|error| format!("{}: {error}", path.display()))?;
+
+    Ok(path.to_string_lossy().into_owned())
 }
 
 #[tauri::command]
@@ -62,6 +85,21 @@ fn status(recorder: State<'_, Recorder>) -> AppStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The config tells the game where to dial, and the recorder is what has
+    /// to be holding that socket when it does. They are the same constant
+    /// today and two numbers in two files the moment either is edited by hand.
+    #[test]
+    fn the_config_sends_the_game_to_the_port_the_recorder_takes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        config::write_config(&path, &local_url(), "test").unwrap();
+
+        let written: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+
+        assert_eq!(written["servers"][0], format!("ws://{}", recording_addr()));
+    }
 
     /// The one place the two halves of the app agree on a spelling: `status`
     /// is read by `src/state.ts`, which cannot see this struct. A renamed
@@ -117,7 +155,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             start_recording,
             stop_recording,
-            status
+            status,
+            configure_game
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

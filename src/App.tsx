@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { MODES, type Mode } from "./modes.ts";
 import { consentGiven, rememberConsent, type Status as AppStatus } from "./state.ts";
 import { Consent } from "./ui/Consent.tsx";
+import { Setup } from "./ui/Setup.tsx";
 import { Status } from "./ui/Status.tsx";
 import "./App.css";
 
@@ -17,10 +18,21 @@ import "./App.css";
  */
 const POLL_MS = 1000;
 
+/** The two screens consent opens: what the app has counted, and what the game
+ * still needs before it sends anything. */
+const SCREENS = [
+  { kind: "record", label: "Запись" },
+  { kind: "setup", label: "Настройка игры" },
+] as const;
+
+type Screen = (typeof SCREENS)[number]["kind"];
+
 function App() {
   const [status, setStatus] = createSignal<AppStatus | null>(null);
   const [mode, setMode] = createSignal<Mode>(MODES[0]);
+  const [screen, setScreen] = createSignal<Screen>("record");
   const [accepted, setAccepted] = createSignal(false);
+  const [configuredPath, setConfiguredPath] = createSignal<string | null>(null);
   const [failure, setFailure] = createSignal<string | null>(null);
 
   async function refresh() {
@@ -70,6 +82,17 @@ function App() {
     await refresh();
   }
 
+  /** The only thing that touches the game's own files, and it writes one. */
+  async function configure(sessionName: string) {
+    try {
+      setConfiguredPath(await invoke<string>("configure_game", { sessionName }));
+      setFailure(null);
+    } catch (error) {
+      setConfiguredPath(null);
+      setFailure(String(error));
+    }
+  }
+
   async function accept() {
     const current = status();
 
@@ -103,12 +126,36 @@ function App() {
       <Show when={status()} fallback={<p class="note">Запуск...</p>}>
         {(current) => (
           <Show when={consented()} fallback={<Consent onAccept={() => void accept()} />}>
-            <Status
-              status={current()}
-              mode={mode()}
-              onStart={() => void start()}
-              onStop={() => void stop()}
-            />
+            <nav class="screens">
+              <For each={SCREENS}>
+                {(each) => (
+                  <button
+                    classList={{ chosen: screen() === each.kind }}
+                    onClick={() => setScreen(each.kind)}
+                  >
+                    {each.label}
+                  </button>
+                )}
+              </For>
+            </nav>
+
+            <Show
+              when={screen() === "setup"}
+              fallback={
+                <Status
+                  status={current()}
+                  mode={mode()}
+                  onStart={() => void start()}
+                  onStop={() => void stop()}
+                />
+              }
+            >
+              <Setup
+                status={current()}
+                configuredPath={configuredPath()}
+                onConfigure={(sessionName) => void configure(sessionName)}
+              />
+            </Show>
           </Show>
         )}
       </Show>

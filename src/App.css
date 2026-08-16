@@ -76,6 +76,44 @@ button.primary:hover {
   border-color: #57ad78;
 }
 
+button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+button:disabled:hover {
+  border-color: #383b45;
+}
+
+nav.screens {
+  margin-top: 1rem;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+input {
+  font: inherit;
+  color: inherit;
+  background: #1c1e24;
+  border: 1px solid #383b45;
+  border-radius: 6px;
+  padding: 0.4rem 0.7rem;
+}
+
+input.name {
+  width: 12rem;
+}
+
+input.option {
+  flex: 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
 dl {
   display: grid;
   grid-template-columns: max-content 1fr;

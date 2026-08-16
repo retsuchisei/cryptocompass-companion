@@ -96,6 +96,29 @@ function readConsent(store: ConsentStore): Consent | null {
   return null;
 }
 
+/**
+ * What the app knows about the one launch option it cannot write.
+ *
+ * `+cl_liveapi_enabled 1` lives in the game client's own store, so nothing
+ * here can read it back. A frame arriving is the only evidence it took, and
+ * while nothing is listening even silence means nothing.
+ */
+export type LaunchProof =
+  | { proven: false; reason: "not-listening" | "silent" }
+  | { proven: true; at: number };
+
+export function launchProof(status: Status | null): LaunchProof {
+  if (status === null || !recordingOf(status).on) {
+    return { proven: false, reason: "not-listening" };
+  }
+
+  if (status.frames === 0 || status.lastFrameAt === null) {
+    return { proven: false, reason: "silent" };
+  }
+
+  return { proven: true, at: status.lastFrameAt };
+}
+
 /** Recording is on only when the app also says when it started. */
 export function recordingOf(status: Status | null): Recording {
   if (status === null || !status.recording || status.since === null) {

@@ -64,6 +64,18 @@ binary frame is recorded as malformed rather than decoded.
 dropped link or a collector that is down must all cost nothing: the match lands
 on disk first and catches up afterwards.
 
+**The game's `config.json` is not ours either.** `src-tauri/src/config.rs`
+writes the same file as `scripts/liveapi.ps1` in `apex-guideline`, so a player
+who ran the script and a player who ran the app leave the game in the same
+state; edit one and the other is wrong. A config already there is somebody's
+setup until it says `apexRankedManaged`, and then it is kept, not replaced.
+
+The launch option `+cl_liveapi_enabled 1` is the one thing the app does not
+write. It lives in the Steam or EA client's own store, which rewrites the file
+underneath anything that edits it, so `Setup.tsx` asks for one paste and then
+proves it took by waiting for a frame. Claiming success without one would be
+worse than asking.
+
 ## Layering
 
 The Rust side keeps its logic in functions that take bytes and return bytes, so

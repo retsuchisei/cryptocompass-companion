@@ -5,6 +5,7 @@ import {
   CONSENT_KEY,
   consentGiven,
   consentIsCurrent,
+  launchProof,
   recordingOf,
   rememberConsent,
   type ConsentStore,
@@ -86,5 +87,38 @@ test("recording is on only when the app says when it started", () => {
     recordingOf({ ...idleStatus(), recording: true }),
     { on: false },
     "a start with no time behind it is not a start",
+  );
+});
+
+test("the launch option is proven by a frame, never by having asked", () => {
+  const listening: Status = {
+    ...idleStatus(),
+    recording: true,
+    since: 1700000000000,
+  };
+
+  // Nothing is listening, so silence says nothing about the launch option.
+  assert.deepEqual(launchProof(null), { proven: false, reason: "not-listening" });
+  assert.deepEqual(launchProof(idleStatus()), {
+    proven: false,
+    reason: "not-listening",
+  });
+
+  assert.deepEqual(
+    launchProof(listening),
+    { proven: false, reason: "silent" },
+    "recording with nothing arriving is the case the screen exists for",
+  );
+
+  assert.deepEqual(
+    launchProof({ ...listening, frames: 1, lastFrameAt: 1700000000500 }),
+    { proven: true, at: 1700000000500 },
+    "the game connected and sent something, which is the only proof there is",
+  );
+
+  assert.deepEqual(
+    launchProof({ ...listening, frames: 1 }),
+    { proven: false, reason: "silent" },
+    "a frame with no time behind it is not evidence of anything",
   );
 });
