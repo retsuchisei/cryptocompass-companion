@@ -108,3 +108,25 @@ Comments, commit messages, developer-facing strings and every identifier are
 English and ASCII, the same rule `apex-guideline` runs. The one exception is
 text a user reads: the consent screen has to speak the user's language. There is
 no message catalogue yet, so that text sits where it is displayed.
+
+## Language rule
+
+ASCII-only except `src/i18n/`, and `npm run check:ascii` enforces it. Every
+string a user reads lives in a catalogue; everything else - code, comments,
+errors - is English.
+
+The rule is here from the first week on purpose. The sibling guidebook in
+`apex-guideline` did the opposite, wrote its Russian where it was displayed,
+and has been stuck without an i18n layer ever since; it is recorded there as
+debt. Catching the first stray string costs nothing.
+
+English is the catalogue with no fallback behind it: a key missing from `en.ts`
+is a compile error, a key missing from `ru.ts` falls back. `src/i18n/i18n.test.ts`
+checks the two hold the same keys and the same shapes, because a key that
+reaches only one of them is invisible until a reader in the other language
+opens the screen - and the first screen this app shows is the consent screen.
+
+Unlike the website, this app follows the browser's language rather than
+defaulting to English. A site is found by strangers and English is the safe
+greeting; a desktop app is installed on purpose and opens on a consent screen,
+and consent read in a language you merely cope with is not consent.

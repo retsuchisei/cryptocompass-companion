@@ -151,3 +151,18 @@ dd {
   font-size: 0.85rem;
   margin-top: 2rem;
 }
+
+/* Two words in the corner, not flags: a flag names a country and this names a
+   language, and the reader who needs the switch is the one who cannot read the
+   interface it sits in. */
+.locales {
+  margin-left: auto;
+  display: flex;
+  gap: 0.25rem;
+}
+
+.locales button {
+  padding: 0.2rem 0.45rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+}

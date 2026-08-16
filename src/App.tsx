@@ -1,6 +1,7 @@
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 
+import { LOCALES, LOCALE_NAMES, locale, setLocale, t } from "./i18n/index.ts";
 import { MODES, type Mode } from "./modes.ts";
 import { consentGiven, rememberConsent, type Status as AppStatus } from "./state.ts";
 import { Consent } from "./ui/Consent.tsx";
@@ -21,8 +22,8 @@ const POLL_MS = 1000;
 /** The two screens consent opens: what the app has counted, and what the game
  * still needs before it sends anything. */
 const SCREENS = [
-  { kind: "record", label: "Запись" },
-  { kind: "setup", label: "Настройка игры" },
+  { kind: "record" },
+  { kind: "setup" },
 ] as const;
 
 type Screen = (typeof SCREENS)[number]["kind"];
@@ -108,7 +109,7 @@ function App() {
   return (
     <main class="app">
       <header>
-        <h1>CryptoCompass Companion</h1>
+        <h1>{t().appTitle}</h1>
         <nav>
           <For each={MODES}>
             {(each) => (
@@ -116,14 +117,30 @@ function App() {
                 classList={{ chosen: mode().kind === each.kind }}
                 onClick={() => setMode(each)}
               >
-                {each.kind === "player" ? "Игрок" : "Организатор"}
+                {each.kind === "player" ? t().modePlayer : t().modeOrganiser}
+              </button>
+            )}
+          </For>
+        </nav>
+
+        {/* Two words rather than flags: the app has one strip of chrome and a
+            flag says nothing to a reader who does not already know it. */}
+        <nav class="locales">
+          <For each={LOCALES}>
+            {(each) => (
+              <button
+                classList={{ chosen: locale() === each }}
+                aria-label={LOCALE_NAMES[each]}
+                onClick={() => setLocale(each)}
+              >
+                {each.toUpperCase()}
               </button>
             )}
           </For>
         </nav>
       </header>
 
-      <Show when={status()} fallback={<p class="note">Запуск...</p>}>
+      <Show when={status()} fallback={<p class="note">{t().starting}</p>}>
         {(current) => (
           <Show when={consented()} fallback={<Consent onAccept={() => void accept()} />}>
             <nav class="screens">
@@ -133,7 +150,7 @@ function App() {
                     classList={{ chosen: screen() === each.kind }}
                     onClick={() => setScreen(each.kind)}
                   >
-                    {each.label}
+                    {each.kind === "record" ? t().screenRecord : t().screenSetup}
                   </button>
                 )}
               </For>

@@ -1,5 +1,6 @@
 import { createSignal, Show, type JSX } from "solid-js";
 
+import { t } from "../i18n/index.ts";
 import { launchProof, type Status as AppStatus } from "../state.ts";
 
 /**
@@ -11,8 +12,6 @@ import { launchProof, type Status as AppStatus } from "../state.ts";
  * edits it, so this screen asks for one paste and then proves it took by
  * waiting for a frame - never by saying it worked.
  *
- * Its text is Russian for the same reason the consent screen's is: it is text
- * a user reads, and this app has no message catalogue yet.
  */
 const LAUNCH_OPTION = "+cl_liveapi_enabled 1";
 
@@ -33,12 +32,12 @@ export function Setup(props: {
     const proof = launchProof(props.status);
 
     if (proof.proven) {
-      return `Игра присылает кадры, последний в ${atTime(proof.at)}. Всё настроено.`;
+      return t().setupProven(atTime(proof.at));
     }
 
     return proof.reason === "not-listening"
-      ? "Запись выключена, проверять нечего. Включите её на экране записи, потом зайдите в кастомный матч."
-      : "Кадров пока нет. Зайдите в кастомный матч - в обычном матчмейкинге и в ранкеде игра ничего не пришлёт.";
+      ? t().setupNotListening
+      : t().setupNoFrames;
   };
 
   async function copy() {
@@ -56,13 +55,9 @@ export function Setup(props: {
 
   return (
     <section class="screen">
-      <h2>Настройка игры</h2>
+      <h2>{t().setupTitle}</h2>
 
-      <p>
-        Шаг 1. Приложение пропишет игре, куда отправлять поток - на этот
-        компьютер, в это приложение. Имя ниже игра запишет в свои логи; подойдёт
-        ваш ник.
-      </p>
+      <p>{t().setupStep1}</p>
 
       <div class="row">
         <input
@@ -75,34 +70,26 @@ export function Setup(props: {
           disabled={sessionName().trim() === ""}
           onClick={() => props.onConfigure(sessionName().trim())}
         >
-          Настроить игру
+          {t().setupConfigure}
         </button>
       </div>
 
       <Show when={props.configuredPath} keyed>
-        {(path) => <p class="note">Записано: {path}</p>}
+        {(path) => <p class="note">{t().setupWritten(path)}</p>}
       </Show>
 
-      <p>
-        Шаг 2. Один раз добавьте это в параметры запуска игры (EA app: Manage,
-        View properties, Advanced launch properties; Steam: свойства, параметры
-        запуска) и перезапустите её. Приложение не может сделать это за вас:
-        параметры хранит лаунчер и перезаписывает их по-своему.
-      </p>
+      <p>{t().setupStep2}</p>
 
       <div class="row">
         <input class="option" readonly value={LAUNCH_OPTION} ref={field} />
-        <button onClick={() => void copy()}>Скопировать</button>
+        <button onClick={() => void copy()}>{t().setupCopy}</button>
       </div>
 
       <Show when={copied()}>
-        <p class="note">Скопировано.</p>
+        <p class="note">{t().setupCopied}</p>
       </Show>
 
-      <p>
-        Шаг 3. Проверка. Мы не можем прочитать параметры запуска, поэтому
-        единственное доказательство - пришедший кадр.
-      </p>
+      <p>{t().setupStep3}</p>
 
       <p class="note">{proofLabel()}</p>
     </section>

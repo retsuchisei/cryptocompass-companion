@@ -1,37 +1,27 @@
 import type { JSX } from "solid-js";
 
+import { t } from "../i18n/index.ts";
+
 /**
  * The one screen that can turn recording on.
  *
- * Its text is Russian because it is the only text here a user reads, and it is
- * written where it is displayed because this app has no message catalogue yet.
- * Everything else in the repository is English.
+ * Every word of it comes from the catalogue. Consent read in a language the
+ * reader merely copes with is not consent, which is why this app follows the
+ * browser's language rather than greeting everyone in English the way the site
+ * does.
  */
 export function Consent(props: { onAccept: () => void }): JSX.Element {
   return (
     <section class="screen">
-      <h2>Прежде чем включить запись</h2>
+      <h2>{t().consentTitle}</h2>
 
-      <p>
-        Поток LiveAPI описывает весь лобби, а не только вас: события матча и
-        действия всех игроков, которые в нём находятся. Включая запись, вы
-        отправляете данные и о них тоже.
-      </p>
-      <p>
-        Каждый кадр сначала пишется на этот компьютер, а потом уходит на наш
-        сервер. Из таких записей строятся данные о кольцах.
-      </p>
-      <p>
-        Запись выключена, пока вы не нажмёте кнопку ниже. После каждого
-        обновления приложение спросит снова.
-      </p>
-      <p class="note">
-        LiveAPI работает только в кастомных матчах: в обычном матчмейкинге и в
-        ранкеде игра не пришлёт ничего.
-      </p>
+      <p>{t().consentLobby}</p>
+      <p>{t().consentLocalFirst}</p>
+      <p>{t().consentOffUntil}</p>
+      <p class="note">{t().consentCustomOnly}</p>
 
       <button class="primary" onClick={() => props.onAccept()}>
-        Понимаю, включить запись
+        {t().consentAccept}
       </button>
     </section>
   );

@@ -1,5 +1,6 @@
 import { Show, type JSX } from "solid-js";
 
+import { t } from "../i18n/index.ts";
 import type { Mode } from "../modes.ts";
 import {
   recordingOf,
@@ -29,86 +30,79 @@ export function Status(props: {
 
   return (
     <section class="screen">
-      <h2>{recording().on ? "Идёт запись" : "Запись выключена"}</h2>
+      <h2>{recording().on ? t().statusRecording : t().statusStopped}</h2>
 
       <dl>
         <Show when={startedAt()} keyed>
           {(since) => (
             <div>
-              <dt>Включена</dt>
+              <dt>{t().statusSince}</dt>
               <dd>{atTime(since)}</dd>
             </div>
           )}
         </Show>
         <div>
-          <dt>Кадров получено</dt>
+          <dt>{t().statusFrames}</dt>
           <dd>{props.status.frames}</dd>
         </div>
         <div>
-          <dt>Последний кадр</dt>
+          <dt>{t().statusLastFrame}</dt>
           <dd>
             {props.status.lastFrameAt === null
-              ? "пока нет"
+              ? t().statusNoFrameYet
               : atTime(props.status.lastFrameAt)}
           </dd>
         </div>
         <div>
-          <dt>Сессия</dt>
-          <dd>{props.status.sessionId ?? "не начата"}</dd>
+          <dt>{t().statusSession}</dt>
+          <dd>{props.status.sessionId ?? t().statusNoSession}</dd>
         </div>
         <div>
-          <dt>Выгрузка</dt>
+          <dt>{t().statusUpstream}</dt>
           <dd>{upstreamLabel(props.status.upstream)}</dd>
         </div>
       </dl>
 
       <Show when={recording().on && props.status.frames === 0}>
-        <p class="note">
-          Кадров пока нет. Игра присылает их только в кастомном матче и только
-          если LiveAPI включён в параметрах запуска.
-        </p>
+        <p class="note">{t().statusNoFramesHint}</p>
       </Show>
 
       <Show when={props.mode.kind === "organiser"}>
-        <p class="note">
-          Режим организатора: приложение пока только записывает. Команды лобби -
-          создать, настроить, запустить - оно не отправляет.
-        </p>
+        <p class="note">{t().statusOrganiserNote}</p>
       </Show>
 
       <Show
         when={recording().on}
         fallback={
           <button class="primary" onClick={() => props.onStart()}>
-            Включить запись
+            {t().statusStart}
           </button>
         }
       >
-        <button onClick={() => props.onStop()}>Остановить запись</button>
+        <button onClick={() => props.onStop()}>{t().statusStop}</button>
       </Show>
 
-      <p class="version">версия {props.status.version}</p>
+      <p class="version">{t().statusVersion(props.status.version)}</p>
     </section>
   );
 }
 
 function upstreamLabel(upstream: UpstreamReport): string {
-  const waiting =
-    upstream.pending > 0 ? `, в очереди ${upstream.pending}` : "";
-
   switch (upstream.state) {
     case "off":
-      return "не настроена, запись только на этот компьютер";
+      return t().upstreamOff;
     case "idle":
-      return "ждёт первый кадр";
+      return t().upstreamIdle;
     case "connecting":
-      return `подключается${waiting}`;
-    // Sent, not delivered: v1 has no acknowledgement, so a frame handed over
-    // just before a drop may or may not have landed and this end cannot tell.
+      return t().upstreamConnecting(upstream.pending);
     case "live":
-      return `отправлено ${upstream.sent}${waiting}`;
+      return t().upstreamLive(upstream.sent, upstream.pending);
     case "retrying":
-      return `нет связи, повтор через ${upstream.retryInSeconds} с (неудач: ${upstream.failures})${waiting}`;
+      return t().upstreamRetrying(
+        upstream.retryInSeconds,
+        upstream.failures,
+        upstream.pending,
+      );
   }
 }
 

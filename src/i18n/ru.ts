@@ -1,0 +1,76 @@
+/**
+ * The Russian catalogue.
+ *
+ * Partial by design: what is missing here falls back to English rather than
+ * showing a blank or a key name. Comments stay English, as everywhere else.
+ */
+
+import type { Strings } from "./en.ts";
+
+export const ru: Partial<Strings> = {
+  lang: "ru",
+  appTitle: "CryptoCompass Companion",
+  starting: "Запуск...",
+
+  modePlayer: "Игрок",
+  modeOrganiser: "Организатор",
+
+  screenRecord: "Запись",
+  screenSetup: "Настройка игры",
+  consentTitle: "Прежде чем включить запись",
+  consentLobby:
+    "Поток LiveAPI описывает весь лобби, а не только вас: события матча и действия всех игроков, которые в нём находятся. Включая запись, вы отправляете данные и о них тоже.",
+  consentLocalFirst:
+    "Каждый кадр сначала пишется на этот компьютер, а потом уходит на наш сервер. Из таких записей строятся данные о кольцах.",
+  consentOffUntil:
+    "Запись выключена, пока вы не нажмёте кнопку ниже. После каждого обновления приложение спросит снова.",
+  consentCustomOnly:
+    "LiveAPI работает только в кастомных матчах: в обычном матчмейкинге и в ранкеде игра не пришлёт ничего.",
+  consentAccept: "Понимаю, включить запись",
+
+  statusRecording: "Идёт запись",
+  statusStopped: "Запись выключена",
+  statusSince: "Включена",
+  statusFrames: "Кадров получено",
+  statusLastFrame: "Последний кадр",
+  statusNoFrameYet: "пока нет",
+  statusSession: "Сессия",
+  statusNoSession: "не начата",
+  statusUpstream: "Выгрузка",
+  statusNoFramesHint:
+    "Кадров пока нет. Игра присылает их только в кастомном матче и только если LiveAPI включён в параметрах запуска.",
+  statusOrganiserNote:
+    "Режим организатора: приложение пока только записывает. Команды лобби - создать, настроить, запустить - оно не отправляет.",
+  statusStart: "Включить запись",
+  statusStop: "Остановить запись",
+  statusVersion: (version: string) => `версия ${version}`,
+
+  upstreamOff: "не настроена, запись только на этот компьютер",
+  upstreamIdle: "ждёт первый кадр",
+  upstreamConnecting: (queued: number) =>
+    queued > 0 ? `подключается, в очереди ${queued}` : "подключается",
+  upstreamLive: (sent: number, queued: number) =>
+    queued > 0 ? `отправлено ${sent}, в очереди ${queued}` : `отправлено ${sent}`,
+  upstreamRetrying: (seconds: number, failures: number, queued: number) =>
+    queued > 0
+      ? `нет связи, повтор через ${seconds} с (неудач: ${failures}), в очереди ${queued}`
+      : `нет связи, повтор через ${seconds} с (неудач: ${failures})`,
+
+  setupTitle: "Настройка игры",
+  setupStep1:
+    "Шаг 1. Приложение пропишет игре, куда отправлять поток - на этот компьютер, в это приложение. Имя ниже игра запишет в свои логи; подойдёт ваш ник.",
+  setupConfigure: "Настроить игру",
+  setupWritten: (path: string) => `Записано: ${path}`,
+  setupStep2:
+    "Шаг 2. Один раз добавьте это в параметры запуска игры (EA app: Manage, View properties, Advanced launch properties; Steam: свойства, параметры запуска) и перезапустите её. Приложение не может сделать это за вас: параметры хранит лаунчер и перезаписывает их по-своему.",
+  setupCopy: "Скопировать",
+  setupCopied: "Скопировано.",
+  setupStep3:
+    "Шаг 3. Проверка. Мы не можем прочитать параметры запуска, поэтому единственное доказательство - пришедший кадр.",
+  setupProven: (at: string) =>
+    `Игра присылает кадры, последний в ${at}. Всё настроено.`,
+  setupNotListening:
+    "Запись выключена, проверять нечего. Включите её на экране записи, потом зайдите в кастомный матч.",
+  setupNoFrames:
+    "Кадров пока нет. Зайдите в кастомный матч - в обычном матчмейкинге и в ранкеде игра ничего не пришлёт.",
+};
