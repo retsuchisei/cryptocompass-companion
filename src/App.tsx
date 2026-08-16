@@ -2,7 +2,7 @@ import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch 
 import { invoke } from "@tauri-apps/api/core";
 
 import { t } from "./i18n/index.ts";
-import { checkForUpdate, installUpdate, updateState } from "./updates.ts";
+import { ASK_EVERY_MS, checkForUpdate, installUpdate, shouldAsk, updateState } from "./updates.ts";
 import { MODES, type Mode } from "./modes.ts";
 import { consentGiven, rememberConsent, type Status as AppStatus } from "./state.ts";
 import { bars, pushSample, sinceLastFrame, slots, type Sample } from "./trace.ts";
@@ -75,11 +75,18 @@ function App() {
     return state.kind === "failed" ? state.reason : null;
   };
 
-  // Asked once, on launch, and never again on a timer: this app is opened for
-  // a match and closed afterwards, so a poll would spend its life asking a
-  // question nobody is waiting on. The button in the failure state is the
-  // second ask.
-  onMount(() => void checkForUpdate());
+  // On launch and then hourly. This was once a launch-only check, on the
+  // reasoning that the app is opened for a match and closed after it - which is
+  // wrong about how it is actually used. A tournament evening leaves the window
+  // open for hours, and a fix shipped in the middle of one would reach nobody
+  // until they happened to restart.
+  onMount(() => {
+    void checkForUpdate();
+    const timer = setInterval(() => {
+      if (shouldAsk(updateState())) void checkForUpdate();
+    }, ASK_EVERY_MS);
+    onCleanup(() => clearInterval(timer));
+  });
 
   async function refresh() {
     try {

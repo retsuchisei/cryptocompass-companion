@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { reasonOf } from "./updates.ts";
+import { reasonOf, shouldAsk } from "./updates.ts";
 
 /**
  * The updater's failures arrive as whatever the plugin threw, and the screen
@@ -20,5 +20,27 @@ describe("reporting an update failure", () => {
   test("says something for anything else rather than nothing", () => {
     assert.equal(reasonOf({ code: 500 }), "[object Object]");
     assert.equal(reasonOf(undefined), "undefined");
+  });
+});
+
+describe("asking again on a timer", () => {
+  test("asks after a failure, which is most of why the timer exists", () => {
+    assert.equal(shouldAsk({ kind: "failed", reason: "no connection" }), true);
+  });
+
+  test("asks when the last answer was that there is nothing", () => {
+    assert.equal(shouldAsk({ kind: "none" }), true);
+    assert.equal(shouldAsk({ kind: "idle" }), true);
+  });
+
+  test("does not ask over a check already in flight", () => {
+    assert.equal(shouldAsk({ kind: "checking" }), false);
+    assert.equal(shouldAsk({ kind: "installing" }), false);
+  });
+
+  test("does not throw away an update already being offered", () => {
+    // Re-checking here would replace a version the person is looking at with
+    // the same answer, and the button under their cursor would flicker.
+    assert.equal(shouldAsk({ kind: "ready", version: "0.1.5" }), false);
   });
 });

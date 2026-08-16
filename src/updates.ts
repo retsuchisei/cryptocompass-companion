@@ -31,6 +31,21 @@ export function reasonOf(error: unknown): string {
   return typeof error === "string" ? error : String(error);
 }
 
+/** How often to ask again while the window stays open. */
+export const ASK_EVERY_MS = 60 * 60 * 1000;
+
+/**
+ * Whether asking again is worth doing.
+ *
+ * Not while a check is in flight, and not once one has been found: the answer
+ * would not change and a second check would throw away a version the person is
+ * being offered. A previous failure is worth retrying - that is most of why
+ * the timer exists.
+ */
+export function shouldAsk(state: UpdateState): boolean {
+  return state.kind !== "checking" && state.kind !== "installing" && state.kind !== "ready";
+}
+
 /**
  * Ask once. Returns the state it settled on, so a caller can act without
  * reading the signal back.

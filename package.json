@@ -1,6 +1,6 @@
 {
   "name": "cryptocompass-companion",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Records Apex LiveAPI sessions on a player's machine and forwards them to the collector",
   "type": "module",
   "scripts": {
