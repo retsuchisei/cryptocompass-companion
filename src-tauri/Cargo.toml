@@ -26,12 +26,20 @@ serde = { version = "1", features = ["derive"] }
 # the header's own keys in session.py's order, which is the format we copy.
 serde_json = { version = "1", features = ["preserve_order"] }
 # The async runtime Tauri already pulls in, named here so the listener does not
-# rest on a transitive dependency staying where it is.
-tokio = { version = "1", features = ["macros", "net", "rt", "time"] }
-# RFC 6455, both halves: the server the game dials, and the client the tests
-# dial it with. Hand-rolling a handshake would be worse than the Python side's
+# rest on a transitive dependency staying where it is. `sync` is the sender's
+# queue waking its own task.
+tokio = { version = "1", features = ["macros", "net", "rt", "sync", "time"] }
+# RFC 6455, both halves: the server the game dials, and the client that dials
+# the collector. Hand-rolling a handshake would be worse than the Python side's
 # minimal one, which exists only because that project is stdlib-only.
-tokio-tungstenite = "0.30"
+#
+# native-tls, because the collector is behind wss and without a TLS feature
+# `connect_async` refuses the url before it reaches the network - which the
+# sender cannot tell from a collector that is down, and so retries forever
+# saying nothing. The system's own TLS rather than a bundled one: schannel on
+# Windows, so the machine's trust store and its policies apply and the build
+# needs nothing installed.
+tokio-tungstenite = { version = "0.30", features = ["native-tls"] }
 # The stream and sink combinators tungstenite hands back.
 futures-util = "0.3"
 # Timestamps in the shape session.py writes them - ISO 8601, milliseconds, Z.

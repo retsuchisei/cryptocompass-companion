@@ -1,5 +1,6 @@
 pub mod listen;
 pub mod session;
+pub mod upstream;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
