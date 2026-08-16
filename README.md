@@ -43,7 +43,6 @@ runs in CI on a Windows runner.
 
 ## The design
 
-The app's rules are in `CLAUDE.md`. The reasoning behind them - why it relays
-rather than parses, why the local file comes before the network, why it lives in
-its own repository - is in the private `apex-guideline` repository at
-`docs/superpowers/specs/2026-08-16-companion-app-design.md`.
+The app's rules are in `CLAUDE.md`: it relays rather than parses, the local file
+is written before the network is touched, and nothing is recorded or sent until
+somebody turns it on.
