@@ -7,6 +7,7 @@ import { MODES, type Mode } from "./modes.ts";
 import { consentGiven, rememberConsent, type Status as AppStatus } from "./state.ts";
 import { bars, pushSample, sinceLastFrame, slots, type Sample } from "./trace.ts";
 import { Consent } from "./ui/Consent.tsx";
+import { Titlebar } from "./ui/Titlebar.tsx";
 import { Settings } from "./ui/Settings.tsx";
 import { Setup } from "./ui/Setup.tsx";
 import { Status } from "./ui/Status.tsx";
@@ -154,13 +155,16 @@ function App() {
   }
 
   return (
-    <div class="app">
+    <>
+      <Titlebar
+        state={recording() ? `${t().statusRecording}${elapsed() ? ` - ${elapsed()}` : ""}` : t().statusStopped}
+        recording={recording()}
+        updateReady={ready()}
+        updateInstalling={updateState().kind === "installing"}
+        onInstall={() => void installUpdate()}
+      />
+      <div class="app">
       <aside class="side">
-        <div class="brand">
-          <img src="/logo.svg" alt="" width="26" height="26" />
-          <b>CryptoCompass</b>
-        </div>
-
         {/* One group needs no heading: a category label earns its place when
             there is a second category to tell it apart from. */}
         <nav class="group">
@@ -190,9 +194,6 @@ function App() {
       <section class="main">
         <div class="bar">
           <h2>{label(screen())}</h2>
-          <Show when={recording() && elapsed()} keyed>
-            {(text) => <span class="clock">{text}</span>}
-          </Show>
         </div>
 
         <div class="body">
@@ -229,42 +230,25 @@ function App() {
           </Show>
         </div>
 
-        {/* Below the screens, never between somebody and what they opened the
-            app to do. */}
-        <Show when={updateState().kind !== "idle" && updateState().kind !== "none"}>
-          <p class="update">
-            <Switch>
-              <Match when={updateState().kind === "checking"}>{t().updateChecking}</Match>
-              <Match when={updateState().kind === "installing"}>{t().updateInstalling}</Match>
-              <Match when={ready()} keyed>
-                {(version) => (
-                  <>
-                    {t().updateReady(version)}{" "}
-                    <button class="btn small" onClick={() => void installUpdate()}>
-                      {t().updateInstall}
-                    </button>
-                  </>
-                )}
-              </Match>
-              <Match when={failedReason()} keyed>
-                {(reason) => (
-                  <>
-                    {t().updateFailed(reason)}{" "}
-                    <button class="btn small" onClick={() => void checkForUpdate()}>
-                      {t().updateRecheck}
-                    </button>
-                  </>
-                )}
-              </Match>
-            </Switch>
-          </p>
+        {/* Only a failure stays down here. An offer belongs in the title bar,
+            where it can be ignored; a problem needs words. */}
+        <Show when={failedReason()} keyed>
+          {(reason) => (
+            <p class="update">
+              {t().updateFailed(reason)}{" "}
+              <button class="btn small" onClick={() => void checkForUpdate()}>
+                {t().updateRecheck}
+              </button>
+            </p>
+          )}
         </Show>
 
         <Show when={failure()} keyed>
           {(text) => <p class="failure">{text}</p>}
         </Show>
       </section>
-    </div>
+      </div>
+    </>
   );
 }
 

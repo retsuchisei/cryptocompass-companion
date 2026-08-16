@@ -29,6 +29,7 @@
 * { box-sizing: border-box; }
 
 html, body, #root { height: 100%; margin: 0; }
+#root { display: flex; flex-direction: column; }
 
 body {
   background: var(--panel);
@@ -38,7 +39,85 @@ body {
   overflow: hidden;
 }
 
-.app { height: 100%; display: grid; grid-template-columns: 218px 1fr; }
+.app { flex: 1; min-height: 0; display: grid; grid-template-columns: 218px 1fr; }
+
+/* ---------- the window's own title bar ---------- */
+
+/*
+ * The system frame is gone, so this bar is the window: it drags, it carries
+ * what the window is doing, and it holds the three controls. Nothing here may
+ * be taller than it needs to be - every pixel is taken from the work.
+ */
+.titlebar {
+  position: relative;
+  flex: none;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-left: 0.65rem;
+  background: #04060a;
+  border-bottom: 1px solid var(--hair);
+  user-select: none;
+}
+
+.titlebar-mark { border-radius: 4px; flex: none; }
+
+.titlebar-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+/* Centred against the window rather than against what is left of the row, so
+   it does not shuffle sideways when the update button appears. */
+.titlebar-state {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--dim);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.titlebar-update {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 22px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--mark);
+  cursor: pointer;
+}
+
+.titlebar-update:hover { background: rgba(255, 74, 205, 0.14); }
+.titlebar-installing { margin-left: auto; font-size: 0.74rem; color: var(--faint); }
+
+.titlebar-controls { margin-left: auto; display: flex; height: 100%; }
+.titlebar-update + .titlebar-controls,
+.titlebar-installing + .titlebar-controls { margin-left: 0.35rem; }
+
+.titlebar-controls button {
+  width: 44px;
+  border: 0;
+  background: none;
+  color: var(--dim);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.titlebar-controls button:hover { background: rgba(255, 255, 255, 0.08); color: var(--ink); }
+/* Red on close only, and only on hover: the one control you cannot undo. */
+.titlebar-controls button.close:hover { background: #c8253a; color: #fff; }
 
 /* ---------- the sidebar ---------- */
 
@@ -50,18 +129,9 @@ body {
   min-height: 0;
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  padding: 0.8rem 0.9rem;
-  border-bottom: 1px solid var(--hair);
-}
-
-.brand img { border-radius: 7px; }
-.brand b { font-size: 0.95rem; font-weight: 600; }
-
-.group { padding: 0.9rem 0.5rem 0.1rem; }
+/* No brand block here: the title bar says the name, and saying it twice
+   thirty pixels apart is the same word taking two rows of a small window. */
+.group { padding: 0.7rem 0.5rem 0.1rem; }
 
 .group h3 {
   margin: 0 0 0.25rem 0.5rem;
