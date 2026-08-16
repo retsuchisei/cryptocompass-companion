@@ -113,7 +113,11 @@ no message catalogue yet, so that text sits where it is displayed.
 
 ASCII-only except `src/i18n/`, and `npm run check:ascii` enforces it. Every
 string a user reads lives in a catalogue; everything else - code, comments,
-errors - is English.
+errors **and commit messages** - is English.
+
+Commit messages are named here because the checker cannot see them: it reads
+files, and a message lives in the object database. This repository is public,
+so its log is the part of it strangers read first.
 
 The rule is here from the first week on purpose. The sibling guidebook in
 `apex-guideline` did the opposite, wrote its Russian where it was displayed,
