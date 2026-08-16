@@ -87,7 +87,17 @@ function App() {
   // open for hours, and a fix shipped in the middle of one would reach nobody
   // until they happened to restart.
   onMount(() => {
-    void checkForUpdate();
+    // At launch an update installs itself. Nothing is in progress yet, so
+    // there is nothing to interrupt, and a tester one build behind is a bug
+    // report about code nobody is running any more.
+    //
+    // Never on the hourly check: that one only lights the icon in the title
+    // bar. Installing restarts the app, and a restart in the middle of a match
+    // destroys a recording that cannot be played again.
+    void checkForUpdate().then((found) => {
+      if (found.kind === "ready" && !recording()) void installUpdate();
+    });
+
     const timer = setInterval(() => {
       if (shouldAsk(updateState())) void checkForUpdate();
     }, ASK_EVERY_MS);

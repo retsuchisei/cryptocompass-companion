@@ -69,28 +69,50 @@ export async function checkForUpdate(): Promise<UpdateState> {
   }
 }
 
+/** How many times a download is worth retrying before giving up and saying so. */
+export const INSTALL_ATTEMPTS = 3;
+
+/** Seconds to wait before attempt n, doubling and capped. */
+export function retryAfter(attempt: number): number {
+  return Math.min(30, 2 ** attempt);
+}
+
 /**
  * Download, install, restart. There is no step between installing and
  * restarting on purpose: a Windows installer that has replaced the running
  * binary leaves the process it replaced in a state nobody should keep using.
+ *
+ * Retried, because the usual reason a download dies is a connection that comes
+ * back a moment later, and asking somebody to press the button again for that
+ * is asking them to do the computer's job.
  */
-export async function installUpdate(): Promise<void> {
+export async function installUpdate(attempts = INSTALL_ATTEMPTS): Promise<void> {
   setUpdateState({ kind: "installing" });
 
-  try {
-    const { check } = await import("@tauri-apps/plugin-updater");
-    const found = await check();
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const { check } = await import("@tauri-apps/plugin-updater");
+      const found = await check();
 
-    if (!found) {
-      setUpdateState({ kind: "none" });
+      if (!found) {
+        setUpdateState({ kind: "none" });
+        return;
+      }
+
+      await found.downloadAndInstall();
+
+      const { relaunch } = await import("@tauri-apps/plugin-process");
+      await relaunch();
       return;
+    } catch (error) {
+      const last = attempt === attempts - 1;
+
+      if (last) {
+        setUpdateState({ kind: "failed", reason: reasonOf(error) });
+        return;
+      }
+
+      await new Promise((wake) => setTimeout(wake, retryAfter(attempt) * 1000));
     }
-
-    await found.downloadAndInstall();
-
-    const { relaunch } = await import("@tauri-apps/plugin-process");
-    await relaunch();
-  } catch (error) {
-    setUpdateState({ kind: "failed", reason: reasonOf(error) });
   }
 }

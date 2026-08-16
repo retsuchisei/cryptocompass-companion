@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { reasonOf, shouldAsk } from "./updates.ts";
+import { reasonOf, retryAfter, shouldAsk } from "./updates.ts";
 
 /**
  * The updater's failures arrive as whatever the plugin threw, and the screen
@@ -42,5 +42,17 @@ describe("asking again on a timer", () => {
     // Re-checking here would replace a version the person is looking at with
     // the same answer, and the button under their cursor would flicker.
     assert.equal(shouldAsk({ kind: "ready", version: "0.1.5" }), false);
+  });
+});
+
+describe("retrying a download", () => {
+  test("waits longer each time, because the usual cause passes", () => {
+    assert.equal(retryAfter(0), 1);
+    assert.equal(retryAfter(1), 2);
+    assert.equal(retryAfter(2), 4);
+  });
+
+  test("stops growing, so a long outage is not a long wait", () => {
+    assert.equal(retryAfter(10), 30);
   });
 });
