@@ -34,7 +34,7 @@ is recorded or sent until somebody presses that button.
 
 ```bash
 npm install
-npm run check   # the gate: typecheck, cargo fmt, clippy, cargo test, vite build
+npm run check   # the gate: typecheck, node --test, cargo fmt, clippy, cargo test, vite build
 npm run dev     # the app, against the dev interface
 ```
 

@@ -9,22 +9,24 @@
     "vite:dev": "vite",
     "vite:build": "vite build",
     "typecheck": "tsc --noEmit",
+    "test": "node --test \"src/**/*.test.ts\"",
     "rust:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --check",
     "rust:lint": "cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings",
     "rust:test": "cargo test --manifest-path src-tauri/Cargo.toml",
-    "check": "npm run typecheck && npm run rust:fmt && npm run rust:lint && npm run rust:test && vite build",
+    "check": "npm run typecheck && npm run test && npm run rust:fmt && npm run rust:lint && npm run rust:test && vite build",
     "tauri": "tauri"
   },
   "license": "MIT",
   "dependencies": {
-    "solid-js": "^1.9.3",
     "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-opener": "^2"
+    "@tauri-apps/plugin-opener": "^2",
+    "solid-js": "^1.9.3"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@types/node": "24.13.3",
     "typescript": "~5.6.2",
     "vite": "^6.0.3",
-    "vite-plugin-solid": "^2.11.0",
-    "@tauri-apps/cli": "^2"
+    "vite-plugin-solid": "^2.11.0"
   }
 }

@@ -1,49 +1,121 @@
-import { createSignal } from "solid-js";
-import logo from "./assets/logo.svg";
+import { createSignal, For, onCleanup, Show } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+
+import { MODES, type Mode } from "./modes.ts";
+import { consentGiven, rememberConsent, type Status as AppStatus } from "./state.ts";
+import { Consent } from "./ui/Consent.tsx";
+import { Status } from "./ui/Status.tsx";
 import "./App.css";
 
-function App() {
-  const [greetMsg, setGreetMsg] = createSignal("");
-  const [name, setName] = createSignal("");
+/**
+ * The shell: which mode, which screen, and the only place that asks the Rust
+ * side to start.
+ *
+ * Counters are polled rather than pushed. A frame arrives a few times a second
+ * and nobody watches a counter that closely, so an event channel would be a
+ * moving part bought for nothing.
+ */
+const POLL_MS = 1000;
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name: name() }));
+function App() {
+  const [status, setStatus] = createSignal<AppStatus | null>(null);
+  const [mode, setMode] = createSignal<Mode>(MODES[0]);
+  const [accepted, setAccepted] = createSignal(false);
+  const [failure, setFailure] = createSignal<string | null>(null);
+
+  async function refresh() {
+    try {
+      setStatus(await invoke<AppStatus>("status"));
+      setFailure(null);
+    } catch (error) {
+      setFailure(String(error));
+    }
+  }
+
+  void refresh();
+  const timer = setInterval(() => void refresh(), POLL_MS);
+  onCleanup(() => clearInterval(timer));
+
+  /** Consent belongs to this version, and local storage is not reactive. */
+  const consented = () => {
+    const current = status();
+    return current !== null && (accepted() || consentGiven(current.version));
+  };
+
+  async function start() {
+    const current = status();
+
+    // The guard, in one place: nothing may start recording without a consent
+    // given for the build that is running.
+    if (current === null || !consented()) {
+      return;
+    }
+
+    try {
+      await invoke("start_recording");
+    } catch (error) {
+      setFailure(String(error));
+    }
+
+    await refresh();
+  }
+
+  async function stop() {
+    try {
+      await invoke("stop_recording");
+    } catch (error) {
+      setFailure(String(error));
+    }
+
+    await refresh();
+  }
+
+  async function accept() {
+    const current = status();
+
+    if (current === null) {
+      return;
+    }
+
+    rememberConsent(current.version);
+    setAccepted(true);
+    await start();
   }
 
   return (
-    <main class="container">
-      <h1>Welcome to Tauri + Solid</h1>
+    <main class="app">
+      <header>
+        <h1>CryptoCompass Companion</h1>
+        <nav>
+          <For each={MODES}>
+            {(each) => (
+              <button
+                classList={{ chosen: mode().kind === each.kind }}
+                onClick={() => setMode(each)}
+              >
+                {each.kind === "player" ? "Игрок" : "Организатор"}
+              </button>
+            )}
+          </For>
+        </nav>
+      </header>
 
-      <div class="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" class="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" class="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://solidjs.com" target="_blank">
-          <img src={logo} class="logo solid" alt="Solid logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and Solid logos to learn more.</p>
+      <Show when={status()} fallback={<p class="note">Запуск...</p>}>
+        {(current) => (
+          <Show when={consented()} fallback={<Consent onAccept={() => void accept()} />}>
+            <Status
+              status={current()}
+              mode={mode()}
+              onStart={() => void start()}
+              onStop={() => void stop()}
+            />
+          </Show>
+        )}
+      </Show>
 
-      <form
-        class="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg()}</p>
+      <Show when={failure()} keyed>
+        {(text) => <p class="failure">{text}</p>}
+      </Show>
     </main>
   );
 }

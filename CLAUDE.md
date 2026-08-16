@@ -15,10 +15,16 @@ hand.
 ## Commands
 
 ```bash
-npm run check   # the gate: typecheck, cargo fmt, clippy, cargo test, vite build
+npm run check   # the gate: typecheck, node --test, cargo fmt, clippy, cargo test, vite build
+npm run test    # the interface's tests alone
 npm run dev     # tauri dev
 npm run build   # tauri build
 ```
+
+The interface's tests run on Node's own test runner - no framework, because
+Node 24 executes TypeScript directly. They cover the pure modules; components
+are not tested, which would need a DOM harness nobody has decided on. A green
+gate means the rules are right, not that the screen is.
 
 `check` is the single gate. Run it before claiming anything works, and show its
 output.
