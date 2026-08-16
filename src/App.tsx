@@ -1,11 +1,13 @@
-import { createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 
-import { LOCALES, LOCALE_NAMES, locale, setLocale, t } from "./i18n/index.ts";
+import { t } from "./i18n/index.ts";
 import { checkForUpdate, installUpdate, updateState } from "./updates.ts";
 import { MODES, type Mode } from "./modes.ts";
 import { consentGiven, rememberConsent, type Status as AppStatus } from "./state.ts";
+import { bars, pushSample, sinceLastFrame, slots, type Sample } from "./trace.ts";
 import { Consent } from "./ui/Consent.tsx";
+import { Settings } from "./ui/Settings.tsx";
 import { Setup } from "./ui/Setup.tsx";
 import { Status } from "./ui/Status.tsx";
 import "./App.css";
@@ -25,6 +27,7 @@ const POLL_MS = 1000;
 const SCREENS = [
   { kind: "record" },
   { kind: "setup" },
+  { kind: "settings" },
 ] as const;
 
 type Screen = (typeof SCREENS)[number]["kind"];
@@ -36,6 +39,28 @@ function App() {
   const [accepted, setAccepted] = createSignal(false);
   const [configuredPath, setConfiguredPath] = createSignal<string | null>(null);
   const [failure, setFailure] = createSignal<string | null>(null);
+  const [history, setHistory] = createSignal<Sample[]>([]);
+  const [now, setNow] = createSignal(Date.now());
+
+  /** One name per screen, so the sidebar and the header cannot disagree. */
+  const label = (kind: Screen) =>
+    kind === "setup" ? t().screenSetup : kind === "settings" ? t().navSettings : t().screenRecord;
+
+  const recording = () => status()?.recording === true;
+
+  /** Elapsed since recording started, mm:ss or hh:mm:ss, never a bare count. */
+  const elapsed = createMemo(() => {
+    // The recorder already knows when it started; keeping a second answer
+    // here would be two clocks to disagree.
+    const from = status()?.since ?? null;
+    if (from === null) return null;
+    const total = Math.max(0, Math.floor((now() - from) / 1000));
+    const parts = [Math.floor(total / 3600), Math.floor((total % 3600) / 60), total % 60];
+    return parts
+      .slice(parts[0] === 0 ? 1 : 0)
+      .map((part, index) => (index === 0 && parts[0] === 0 ? String(part) : String(part).padStart(2, "0")))
+      .join(":");
+  });
 
   // Narrowings rather than casts inside the markup: `keyed` wants a value, and
   // a union member's field is only reachable once the kind is known.
@@ -57,7 +82,10 @@ function App() {
 
   async function refresh() {
     try {
-      setStatus(await invoke<AppStatus>("status"));
+      const next = await invoke<AppStatus>("status");
+      setStatus(next);
+      setNow(Date.now());
+      setHistory((was) => pushSample(was, { at: Date.now(), frames: next.frames }));
       setFailure(null);
     } catch (error) {
       setFailure(String(error));
@@ -126,108 +154,117 @@ function App() {
   }
 
   return (
-    <main class="app">
-      <header>
-        <h1>{t().appTitle}</h1>
-        <nav>
-          <For each={MODES}>
+    <div class="app">
+      <aside class="side">
+        <div class="brand">
+          <img src="/logo.svg" alt="" width="26" height="26" />
+          <b>CryptoCompass</b>
+        </div>
+
+        {/* One group needs no heading: a category label earns its place when
+            there is a second category to tell it apart from. */}
+        <nav class="group">
+          <For each={SCREENS}>
             {(each) => (
               <button
-                classList={{ chosen: mode().kind === each.kind }}
-                onClick={() => setMode(each)}
+                class="item"
+                classList={{ on: screen() === each.kind }}
+                onClick={() => setScreen(each.kind)}
               >
-                {each.kind === "player" ? t().modePlayer : t().modeOrganiser}
+                {label(each.kind)}
               </button>
             )}
           </For>
         </nav>
 
-        {/* Two words rather than flags: the app has one strip of chrome and a
-            flag says nothing to a reader who does not already know it. */}
-        <nav class="locales">
-          <For each={LOCALES}>
-            {(each) => (
-              <button
-                classList={{ chosen: locale() === each }}
-                aria-label={LOCALE_NAMES[each]}
-                onClick={() => setLocale(each)}
-              >
-                {each.toUpperCase()}
-              </button>
-            )}
-          </For>
-        </nav>
-      </header>
+        <div class="spacer" />
 
-      <Show when={status()} fallback={<p class="note">{t().starting}</p>}>
-        {(current) => (
-          <Show when={consented()} fallback={<Consent onAccept={() => void accept()} />}>
-            <nav class="screens">
-              <For each={SCREENS}>
-                {(each) => (
-                  <button
-                    classList={{ chosen: screen() === each.kind }}
-                    onClick={() => setScreen(each.kind)}
-                  >
-                    {each.kind === "record" ? t().screenRecord : t().screenSetup}
-                  </button>
-                )}
-              </For>
-            </nav>
+        {/* Status, not settings: the dot and the session are what somebody
+            glances at, and everything they can change lives on one screen. */}
+        <div class="me">
+          <span class="dot" classList={{ live: recording() }} />
+          <span class="sub">{status()?.sessionId ?? t().statusNoSession}</span>
+        </div>
+      </aside>
 
-            <Show
-              when={screen() === "setup"}
-              fallback={
-                <Status
-                  status={current()}
-                  mode={mode()}
-                  onStart={() => void start()}
-                  onStop={() => void stop()}
-                />
-              }
-            >
-              <Setup
-                status={current()}
-                configuredPath={configuredPath()}
-                onConfigure={(sessionName) => void configure(sessionName)}
-              />
-            </Show>
+      <section class="main">
+        <div class="bar">
+          <h2>{label(screen())}</h2>
+          <Show when={recording() && elapsed()} keyed>
+            {(text) => <span class="clock">{text}</span>}
           </Show>
-        )}
-      </Show>
+        </div>
 
-      {/* Below the screens rather than above them: an update is worth
-          offering, never worth standing between somebody and the thing they
-          opened the app to do. */}
-      <Show when={updateState().kind !== "idle" && updateState().kind !== "none"}>
-        <p class="update">
-          <Switch>
-            <Match when={updateState().kind === "checking"}>{t().updateChecking}</Match>
-            <Match when={updateState().kind === "installing"}>{t().updateInstalling}</Match>
-            <Match when={ready()} keyed>
-              {(version) => (
-                <>
-                  {t().updateReady(version)}{" "}
-                  <button onClick={() => void installUpdate()}>{t().updateInstall}</button>
-                </>
-              )}
-            </Match>
-            <Match when={failedReason()} keyed>
-              {(reason) => (
-                <>
-                  {t().updateFailed(reason)}{" "}
-                  <button onClick={() => void checkForUpdate()}>{t().updateRecheck}</button>
-                </>
-              )}
-            </Match>
-          </Switch>
-        </p>
-      </Show>
+        <div class="body">
+          <Show when={status()} fallback={<p class="note">{t().starting}</p>}>
+            {(current) => (
+              <Show
+                when={consented()}
+                fallback={<Consent onAccept={() => void accept()} />}
+              >
+                <Switch>
+                  <Match when={screen() === "setup"}>
+                    <Setup
+                      status={current()}
+                      configuredPath={configuredPath()}
+                      onConfigure={(sessionName) => void configure(sessionName)}
+                    />
+                  </Match>
+                  <Match when={screen() === "settings"}>
+                    <Settings mode={mode()} onMode={setMode} />
+                  </Match>
+                  <Match when={true}>
+                    <Status
+                      status={current()}
+                      mode={mode()}
+                      bars={slots(bars(history()))}
+                      since={sinceLastFrame(current().lastFrameAt, now())}
+                      onStart={() => void start()}
+                      onStop={() => void stop()}
+                    />
+                  </Match>
+                </Switch>
+              </Show>
+            )}
+          </Show>
+        </div>
 
-      <Show when={failure()} keyed>
-        {(text) => <p class="failure">{text}</p>}
-      </Show>
-    </main>
+        {/* Below the screens, never between somebody and what they opened the
+            app to do. */}
+        <Show when={updateState().kind !== "idle" && updateState().kind !== "none"}>
+          <p class="update">
+            <Switch>
+              <Match when={updateState().kind === "checking"}>{t().updateChecking}</Match>
+              <Match when={updateState().kind === "installing"}>{t().updateInstalling}</Match>
+              <Match when={ready()} keyed>
+                {(version) => (
+                  <>
+                    {t().updateReady(version)}{" "}
+                    <button class="btn small" onClick={() => void installUpdate()}>
+                      {t().updateInstall}
+                    </button>
+                  </>
+                )}
+              </Match>
+              <Match when={failedReason()} keyed>
+                {(reason) => (
+                  <>
+                    {t().updateFailed(reason)}{" "}
+                    <button class="btn small" onClick={() => void checkForUpdate()}>
+                      {t().updateRecheck}
+                    </button>
+                  </>
+                )}
+              </Match>
+            </Switch>
+          </p>
+        </Show>
+
+        <Show when={failure()} keyed>
+          {(text) => <p class="failure">{text}</p>}
+        </Show>
+      </section>
+    </div>
   );
 }
 

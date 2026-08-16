@@ -29,6 +29,15 @@ export const en = {
   updateInstalling: "Downloading and installing...",
   updateFailed: (reason: string) => `Could not check for updates: ${reason}`,
   updateRecheck: "Check again",
+  navSettings: "Settings",
+  settingsLanguage: "Language",
+  settingsSeat: "Seat",
+  settingsSeatHint:
+    "An organiser records from the observer's seat. Either way the app records the same match; the seat only decides what it will be able to do once lobby commands exist.",
+  traceQuiet: "Nothing arriving yet",
+  traceLast: (seconds: string) => `Frames arriving - last one ${seconds} s ago`,
+  statusIdleNote:
+    "Recording is off: nothing is written and nothing is sent. The game only sends frames in a custom match.",
   consentTitle: "Before you turn recording on",
   consentLobby:
     "The LiveAPI stream describes the whole lobby, not only you: match events and what every player in it does. Turning recording on sends their data too.",

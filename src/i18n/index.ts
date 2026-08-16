@@ -23,9 +23,14 @@ export const LOCALES = ["en", "ru"] as const;
 
 export type Locale = (typeof LOCALES)[number];
 
+/**
+ * Endonyms: each language named in itself. The label exists for the reader who
+ * cannot read the interface it sits in, and "Russian" written in English is
+ * exactly the wrong way round for them.
+ */
 export const LOCALE_NAMES: Record<Locale, string> = {
   en: "English",
-  ru: "Russian",
+  ru: "Русский",
 };
 
 const TABLES: Record<Locale, Strings> = {

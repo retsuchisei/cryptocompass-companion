@@ -2,6 +2,7 @@ import { Show, type JSX } from "solid-js";
 
 import { t } from "../i18n/index.ts";
 import type { Mode } from "../modes.ts";
+import { Trace } from "./Trace.tsx";
 import {
   recordingOf,
   type Status as AppStatus,
@@ -18,71 +19,52 @@ import {
 export function Status(props: {
   status: AppStatus;
   mode: Mode;
+  bars: number[];
+  since: number | null;
   onStart: () => void;
   onStop: () => void;
 }): JSX.Element {
   const recording = () => recordingOf(props.status);
 
-  const startedAt = () => {
-    const state = recording();
-    return state.on ? state.since : null;
-  };
-
   return (
     <section class="screen">
-      <h2>{recording().on ? t().statusRecording : t().statusStopped}</h2>
+      <Trace bars={props.bars} since={props.since} />
 
-      <dl>
-        <Show when={startedAt()} keyed>
-          {(since) => (
-            <div>
-              <dt>{t().statusSince}</dt>
-              <dd>{atTime(since)}</dd>
-            </div>
-          )}
-        </Show>
-        <div>
+      <div class="card">
+        <dl>
           <dt>{t().statusFrames}</dt>
           <dd>{props.status.frames}</dd>
-        </div>
-        <div>
-          <dt>{t().statusLastFrame}</dt>
-          <dd>
-            {props.status.lastFrameAt === null
-              ? t().statusNoFrameYet
-              : atTime(props.status.lastFrameAt)}
-          </dd>
-        </div>
-        <div>
-          <dt>{t().statusSession}</dt>
-          <dd>{props.status.sessionId ?? t().statusNoSession}</dd>
-        </div>
-        <div>
           <dt>{t().statusUpstream}</dt>
           <dd>{upstreamLabel(props.status.upstream)}</dd>
-        </div>
-      </dl>
+        </dl>
+      </div>
 
       <Show when={recording().on && props.status.frames === 0}>
         <p class="note">{t().statusNoFramesHint}</p>
+      </Show>
+
+      <Show when={!recording().on}>
+        <p class="note">{t().statusIdleNote}</p>
       </Show>
 
       <Show when={props.mode.kind === "organiser"}>
         <p class="note">{t().statusOrganiserNote}</p>
       </Show>
 
-      <Show
-        when={recording().on}
-        fallback={
-          <button class="primary" onClick={() => props.onStart()}>
-            {t().statusStart}
+      <div class="actions">
+        <Show
+          when={recording().on}
+          fallback={
+            <button class="btn primary" onClick={() => props.onStart()}>
+              {t().statusStart}
+            </button>
+          }
+        >
+          <button class="btn" onClick={() => props.onStop()}>
+            {t().statusStop}
           </button>
-        }
-      >
-        <button onClick={() => props.onStop()}>{t().statusStop}</button>
-      </Show>
-
-      <p class="version">{t().statusVersion(props.status.version)}</p>
+        </Show>
+      </div>
     </section>
   );
 }
@@ -104,8 +86,4 @@ function upstreamLabel(upstream: UpstreamReport): string {
         upstream.pending,
       );
   }
-}
-
-function atTime(unixMs: number): string {
-  return new Date(unixMs).toLocaleTimeString();
 }

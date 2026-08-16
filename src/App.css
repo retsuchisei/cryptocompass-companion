@@ -1,168 +1,246 @@
+/*
+ * The window.
+ *
+ * A sidebar that is always there and a content column beside it: the app has
+ * three screens and one state, and the state has to be readable without
+ * navigating to it. Colours are the site's own tokens, verbatim - a second
+ * palette would make one product look like two.
+ */
+
 :root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 15px;
-  line-height: 1.5;
+  color-scheme: dark;
 
-  color: #e8e8ea;
-  background-color: #16171b;
+  --ground: #07090d;
+  --panel: #10141c;
+  --raise: #161b25;
+  --hair: rgba(255, 255, 255, 0.09);
+  --ink: #f2f5fa;
+  --dim: #a8b2c4;
+  --faint: #6c7688;
+  --signal: #ff6a3d;
+  --mark: #ff4acd;
+  --radius: 8px;
 
+  font-family: "Fira Sans Condensed", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
   font-synthesis: none;
-  text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; margin: 0; }
 
 body {
-  margin: 0;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.45;
+  overflow: hidden;
 }
 
-.app {
-  max-width: 40rem;
-  margin: 0 auto;
-  padding: 1.5rem 1.5rem 3rem;
-}
+.app { height: 100%; display: grid; grid-template-columns: 218px 1fr; }
 
-header {
+/* ---------- the sidebar ---------- */
+
+.side {
+  background: var(--ground);
+  border-right: 1px solid var(--hair);
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-  border-bottom: 1px solid #2c2e35;
-  padding-bottom: 0.75rem;
+  flex-direction: column;
+  min-height: 0;
 }
 
-h1 {
-  font-size: 1.1rem;
-  font-weight: 600;
-  margin: 0;
-}
-
-h2 {
-  font-size: 1.35rem;
-  margin: 1.5rem 0 0.75rem;
-}
-
-nav {
+.brand {
   display: flex;
-  gap: 0.5rem;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.8rem 0.9rem;
+  border-bottom: 1px solid var(--hair);
 }
 
-button {
+.brand img { border-radius: 7px; }
+.brand b { font-size: 0.95rem; font-weight: 600; }
+
+.group { padding: 0.9rem 0.5rem 0.1rem; }
+
+.group h3 {
+  margin: 0 0 0.25rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.item {
+  display: block;
+  width: 100%;
+  padding: 0.45rem 0.5rem;
+  margin: 0.05rem 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--dim);
   font: inherit;
-  color: inherit;
-  background: #22242b;
-  border: 1px solid #383b45;
-  border-radius: 6px;
-  padding: 0.4rem 0.9rem;
+  font-size: 0.92rem;
+  text-align: left;
   cursor: pointer;
 }
 
-button:hover {
-  border-color: #565b69;
+.item:hover { background: var(--panel); color: var(--ink); }
+.item.on { background: rgba(255, 255, 255, 0.09); color: var(--ink); font-weight: 500; position: relative; }
+
+/* The active row is marked by a bar on its edge rather than by an icon: it
+   says "this one" without pretending to say what kind of thing it is. */
+.item.on::before {
+  content: "";
+  position: absolute;
+  left: -0.5rem;
+  top: 0.35rem;
+  bottom: 0.35rem;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--mark);
 }
 
-button.chosen {
-  background: #2f333d;
-  border-color: #6f7686;
-}
+.spacer { flex: 1; }
 
-button.primary {
-  background: #2a5d3f;
-  border-color: #3d8058;
-  padding: 0.6rem 1.2rem;
-}
-
-button.primary:hover {
-  border-color: #57ad78;
-}
-
-button:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
-button:disabled:hover {
-  border-color: #383b45;
-}
-
-nav.screens {
-  margin-top: 1rem;
-}
-
-.row {
+.me {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin: 0.75rem 0;
+  padding: 0.5rem 0.6rem;
+  background: #04060a;
+  border-top: 1px solid var(--hair);
 }
 
-input {
-  font: inherit;
-  color: inherit;
-  background: #1c1e24;
-  border: 1px solid #383b45;
-  border-radius: 6px;
-  padding: 0.4rem 0.7rem;
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--faint);
+  flex: none;
 }
 
-input.name {
-  width: 12rem;
-}
+.dot.live { background: var(--mark); box-shadow: 0 0 0 3px rgba(255, 74, 205, 0.18); }
 
-input.option {
-  flex: 1;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
+.sub { font-size: 0.72rem; color: var(--faint); font-family: ui-monospace, monospace; }
 
-dl {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 0.35rem 1rem;
-  margin: 1rem 0 1.5rem;
-}
+/* ---------- the content column ---------- */
 
-dl > div {
-  display: contents;
-}
+.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 
-dt {
-  color: #9a9daa;
-}
-
-dd {
-  margin: 0;
-  font-variant-numeric: tabular-nums;
-}
-
-.note {
-  color: #9a9daa;
-  border-left: 2px solid #3a3d47;
-  padding-left: 0.75rem;
-}
-
-.failure {
-  color: #f0a3a3;
-  border-left: 2px solid #7a3b3b;
-  padding-left: 0.75rem;
-}
-
-.version {
-  color: #6d707c;
-  font-size: 0.85rem;
-  margin-top: 2rem;
-}
-
-/* Two words in the corner, not flags: a flag names a country and this names a
-   language, and the reader who needs the switch is the one who cannot read the
-   interface it sits in. */
-.locales {
-  margin-left: auto;
+.bar {
   display: flex;
-  gap: 0.25rem;
+  align-items: center;
+  height: 48px;
+  flex: none;
+  padding: 0 1rem;
+  border-bottom: 1px solid var(--hair);
 }
 
-.locales button {
-  padding: 0.2rem 0.45rem;
-  font-size: 0.72rem;
-  letter-spacing: 0.06em;
+.bar h2 { margin: 0; font-size: 0.98rem; font-weight: 600; }
+.clock { margin-left: auto; font-family: ui-monospace, monospace; font-size: 0.9rem; color: var(--dim); }
+
+.body { flex: 1; min-height: 0; overflow: auto; padding: 1rem; }
+
+.screen { height: 100%; display: flex; flex-direction: column; gap: 0.75rem; }
+
+.card {
+  background: var(--ground);
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+}
+
+.card h3 { margin: 0 0 0.5rem; font-size: 0.82rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--faint); }
+
+/* The trace answers the only question asked at a glance, so it gets the room
+   rather than sitting in a strip above empty space. */
+.card.stretch { flex: 1; display: flex; flex-direction: column; min-height: 96px; }
+
+.trace { flex: 1; min-height: 60px; display: flex; align-items: flex-end; gap: 3px; }
+.trace i { flex: 1; background: var(--mark); border-radius: 2px 2px 0 0; display: block; }
+.trace.quiet i { background: var(--faint); opacity: 0.18 !important; }
+.trace-note { margin: 0.55rem 0 0; font-size: 0.78rem; color: var(--faint); }
+
+dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 0.4rem 1.1rem; }
+dt { color: var(--faint); font-size: 0.85rem; }
+dd { margin: 0; font-family: ui-monospace, monospace; font-size: 0.85rem; }
+
+.choices { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--raise);
+  color: var(--dim);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.choice:hover { color: var(--ink); }
+.choice.on { color: var(--ink); border-color: var(--mark); background: rgba(255, 74, 205, 0.1); }
+.flag { border-radius: 2px; flex: none; }
+
+.btn {
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  padding: 0.55rem 0.95rem;
+  background: var(--raise);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn:hover { border-color: rgba(255, 255, 255, 0.16); }
+.btn.primary { background: var(--mark); color: #16040f; border-color: transparent; }
+.btn.small { padding: 0.25rem 0.55rem; font-size: 0.8rem; }
+.btn:disabled { opacity: 0.5; cursor: default; }
+
+.actions { margin-top: auto; display: flex; gap: 0.5rem; }
+
+.note { color: var(--faint); font-size: 0.85rem; margin: 0; }
+
+.row { display: flex; gap: 0.5rem; align-items: center; }
+.row input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+}
+.row input.option { font-family: ui-monospace, monospace; font-size: 0.82rem; }
+
+.update,
+.failure {
+  margin: 0;
+  padding: 0.6rem 1rem;
+  font-size: 0.85rem;
+  border-top: 1px solid var(--hair);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.update { color: var(--dim); background: var(--ground); }
+.failure { color: var(--signal); background: rgba(255, 106, 61, 0.08); }
+
+/* The floor, not a feature: focus has to be visible and motion has to be
+   refusable. */
+:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
 }

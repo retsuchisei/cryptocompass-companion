@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="CryptoCompass">
+  <!--
+    Three rings closing on the zone they settle in, leaning down and right.
+
+    The drawing is the product: the map's whole subject is where a ring stops
+    drifting. Three rings rather than the real five, because the fourth was the
+    accessory to take off - and every ring keeps visible air inside the one
+    before it. A first attempt let ring 2 touch ring 1 from the inside and the
+    mark read as a snail shell rather than as a zone collapsing.
+
+    Opacity climbs inward: what is far off is faint, what is settled is solid.
+
+    This is the large mark, for 32 pixels and up. The favicon is its own
+    reduced drawing - two rings and a dot - because at 16 pixels this one is a
+    smudge. One drawing forced to do both jobs would do neither.
+  -->
+  <rect width="64" height="64" rx="14" fill="#07090d"/>
+  <circle cx="30" cy="29" r="20" fill="none" stroke="#ff4acd" stroke-opacity="0.26" stroke-width="2.2"/>
+  <circle cx="34" cy="32.5" r="12" fill="none" stroke="#ff4acd" stroke-opacity="0.54" stroke-width="2.4"/>
+  <circle cx="36" cy="36" r="6" fill="none" stroke="#ff4acd" stroke-opacity="0.86" stroke-width="2.6"/>
+  <circle cx="37" cy="37.5" r="2.6" fill="#ff4acd"/>
+</svg>
