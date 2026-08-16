@@ -270,8 +270,19 @@ mod tests {
         upstream.send("{\"a\":1}".into());
         upstream.send("{\"a\":2}".into());
 
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        assert!(matches!(upstream.state(), UpstreamState::Retrying { .. }));
+        // Polled rather than sampled after a fixed wait: how long a refused
+        // connection takes to come back is the platform's business, and on the
+        // Windows runner - the one platform this ships to - it is not the
+        // millisecond it is on a Mac.
+        assert!(
+            within(30, || matches!(
+                upstream.state(),
+                UpstreamState::Retrying { .. }
+            ))
+            .await,
+            "a collector that cannot be reached is reported as {:?}",
+            upstream.state()
+        );
         assert_eq!(
             upstream.pending(),
             2,
