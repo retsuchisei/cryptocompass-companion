@@ -21,7 +21,10 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# preserve_order, because a session log is a relay's output: a frame's fields
+# come out in the order the game sent them rather than sorted. It also puts
+# the header's own keys in session.py's order, which is the format we copy.
+serde_json = { version = "1", features = ["preserve_order"] }
 # The async runtime Tauri already pulls in, named here so the listener does not
 # rest on a transitive dependency staying where it is.
 tokio = { version = "1", features = ["macros", "net", "rt", "time"] }
@@ -31,4 +34,15 @@ tokio = { version = "1", features = ["macros", "net", "rt", "time"] }
 tokio-tungstenite = "0.30"
 # The stream and sink combinators tungstenite hands back.
 futures-util = "0.3"
+# Timestamps in the shape session.py writes them - ISO 8601, milliseconds, Z.
+# Hand-rolling a civil calendar to match a format we do not own would be a bug
+# hunt for nothing; chrono is already in the tree behind Tauri.
+chrono = { version = "0.4", default-features = false, features = ["now", "std"] }
+# gzip on close, because `.jsonl.gz` is the name replay.py looks for.
+flate2 = "1"
+
+[dev-dependencies]
+# The session tests write real files. The format is bytes on disk, so a fake
+# filesystem would test something other than the thing that ships.
+tempfile = "3"
 
