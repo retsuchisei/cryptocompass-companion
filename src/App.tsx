@@ -212,7 +212,7 @@ function App() {
                     />
                   </Match>
                   <Match when={screen() === "settings"}>
-                    <Settings mode={mode()} onMode={setMode} />
+                    <Settings mode={mode()} onMode={setMode} version={current().version} />
                   </Match>
                   <Match when={true}>
                     <Status

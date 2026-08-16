@@ -1,7 +1,8 @@
-import { For, type JSX } from "solid-js";
+import { For, Show, type JSX } from "solid-js";
 
 import { LOCALES, LOCALE_NAMES, locale, setLocale, t, type Locale } from "../i18n/index.ts";
 import { MODES, type Mode } from "../modes.ts";
+import { checkForUpdate, installUpdate, updateState } from "../updates.ts";
 import { FlagEn, FlagRu } from "./Flags.tsx";
 
 /**
@@ -20,7 +21,24 @@ function flagFor(item: Locale) {
 export function Settings(props: {
   mode: Mode;
   onMode: (mode: Mode) => void;
+  version: string;
 }): JSX.Element {
+  /**
+   * The launch check settles once and then has nothing more to say. Without a
+   * way to ask again, an app that checked a minute before a release went out
+   * stays a version behind until it is restarted - and the person looking at
+   * it cannot tell that from a broken updater.
+   */
+  const answer = () => {
+    const state = updateState();
+    switch (state.kind) {
+      case "checking": return t().updateChecking;
+      case "installing": return t().updateInstalling;
+      case "ready": return t().updateReady(state.version);
+      case "failed": return t().updateFailed(state.reason);
+      default: return t().updateNone;
+    }
+  };
   return (
     <section class="screen">
       <div class="card">
@@ -41,6 +59,29 @@ export function Settings(props: {
               </button>
             )}
           </For>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>{t().settingsUpdates}</h3>
+        <dl>
+          <dt>{t().settingsVersion}</dt>
+          <dd>{props.version}</dd>
+        </dl>
+        <p class="note">{answer()}</p>
+        <div class="choices">
+          <button
+            class="btn"
+            disabled={updateState().kind === "checking" || updateState().kind === "installing"}
+            onClick={() => void checkForUpdate()}
+          >
+            {t().updateCheck}
+          </button>
+          <Show when={updateState().kind === "ready"}>
+            <button class="btn primary" onClick={() => void installUpdate()}>
+              {t().updateInstall}
+            </button>
+          </Show>
         </div>
       </div>
 
