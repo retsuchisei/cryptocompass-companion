@@ -50,6 +50,13 @@ jobs:
         id: publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Where frames go after the disk. Compiled in here rather than kept
+          # out of a public repository, which is what it used to be: the
+          # address carried a secret path, and it no longer does. The lock is
+          # an install token, which is per-install, minted by the accounts
+          # service and never in a build. Anyone reading this gets a hostname
+          # that answers 404 without one.
+          CRYPTOCOMPASS_COLLECTOR_URL: wss://ws.cryptocompass.tech/
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           # The key has no passphrase, and the variable is still required:
           # 2.11 prompts for one when it is unset, which on a runner is

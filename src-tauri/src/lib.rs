@@ -18,10 +18,14 @@ const LOCAL_PORT: u16 = 7777;
 
 /// Where frames go after the disk, compiled in at release time.
 ///
-/// Absent in a build made from a clone, and absent on purpose: the ingest
-/// address carries a secret path and this repository is public. Without it the
-/// app records locally and sends nothing, which is a usable app rather than a
-/// broken one.
+/// Set for release builds and absent in one made from a clone, which still
+/// records locally and sends nothing - a usable app rather than a broken one.
+///
+/// It used to be absent everywhere, because the ingest address carried a
+/// secret path and this repository is public. It does not any more: the lock
+/// is an install token, minted per install by the accounts service and never
+/// compiled into anything, and the address answers 404 to anyone who does not
+/// carry one. So a public repository may name it.
 const COLLECTOR_URL: Option<&str> = option_env!("CRYPTOCOMPASS_COLLECTOR_URL");
 
 /// The socket the recorder takes, and the address the game is told to dial.
