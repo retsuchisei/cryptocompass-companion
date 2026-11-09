@@ -469,15 +469,14 @@ fn private_dir(path: &Path) -> io::Result<()> {
         .parent()
         .ok_or_else(|| invalid("Invalid journal root"))?;
     private_dir(parent)?;
-    let mut builder = fs::DirBuilder::new();
     #[cfg(unix)]
     {
         use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
+        fs::DirBuilder::new().mode(0o700).create(path)?;
+        File::open(parent)?.sync_all()?;
     }
-    builder.create(path)?;
-    #[cfg(unix)]
-    File::open(parent)?.sync_all()?;
+    #[cfg(not(unix))]
+    fs::create_dir(path)?;
     Ok(())
 }
 
@@ -509,6 +508,27 @@ mod tests {
     use super::*;
     use std::fs::OpenOptions;
     use std::io::Write;
+
+    #[cfg(windows)]
+    #[test]
+    fn native_journal_and_peer_binding_support_long_profile_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir
+            .path()
+            .join("profile".repeat(12))
+            .join("recordings".repeat(9));
+        let budget = Budget::open(&root, 1024 * 1024).unwrap();
+        let journal = Journal::create(&root, Some("test-install-token"), budget.clone()).unwrap();
+        journal.append(Kind::Text, b"exact native frame").unwrap();
+        journal
+            .bind_server("11111111-1111-4111-8111-111111111111")
+            .unwrap();
+        let recovered = Journal::open(journal.path(), Some("test-install-token"), budget).unwrap();
+        assert_eq!(
+            recovered.reader(0).unwrap().batch().unwrap()[0].data,
+            b"exact native frame"
+        );
+    }
 
     #[test]
     fn exact_text_binary_scope_and_session_survive_a_process_restart() {
