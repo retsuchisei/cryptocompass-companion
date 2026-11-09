@@ -1,4 +1,5 @@
 pub mod config;
+pub mod delivery;
 pub mod identity;
 pub mod journal;
 pub mod listen;

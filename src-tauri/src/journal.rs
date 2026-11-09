@@ -273,6 +273,49 @@ impl Journal {
         self.state.lock().unwrap().torn_tail
     }
 
+    /// A server ownership change cannot silently reassign retained old bytes.
+    pub fn bind_server(&self, server_session_id: &str) -> io::Result<()> {
+        if Uuid::parse_str(server_session_id)
+            .map(|id| id.to_string())
+            .ok()
+            .as_deref()
+            != Some(server_session_id)
+        {
+            return Err(invalid("Invalid server session identity"));
+        }
+        let _guard = self.state.lock().unwrap();
+        let path = self.path.with_extension("peer");
+        let raw = serde_json::to_vec(&serde_json::json!({"format":"placement-journal-peer-v2",
+            "clientSessionId":self.session_id(),"serverSessionId":server_session_id}))
+        .unwrap();
+        if path.exists() {
+            if !fs::symlink_metadata(&path)?.file_type().is_file()
+                || fs::metadata(&path)?.len() > 4096
+                || fs::read(&path)? != raw
+            {
+                return Err(invalid("Server session ownership changed"));
+            }
+            return Ok(());
+        }
+        self.budget.reserve(raw.len() as u64)?;
+        let pending = self
+            .path
+            .with_extension(format!("peer-{}.pending", Uuid::new_v4()));
+        {
+            let mut options = OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            let mut file = options.open(&pending)?;
+            file.write_all(&raw)?;
+            file.sync_all()?;
+        }
+        install(&pending, &path)
+    }
+
     pub fn append(&self, kind: Kind, data: &[u8]) -> io::Result<i64> {
         if data.len() > MAX_CAPTURE_BYTES {
             return Err(invalid("Capture frame exceeds local limit"));
@@ -487,6 +530,23 @@ mod tests {
         assert_eq!(frames[1].data, vec![0, 255]);
         assert_eq!(frames[0].seq, 0);
         assert_eq!(frames[1].seq, 1);
+    }
+
+    #[test]
+    fn a_peer_identity_binding_survives_restart_and_cannot_be_reassigned() {
+        let dir = tempfile::tempdir().unwrap();
+        let budget = Budget::open(dir.path(), 1024 * 1024).unwrap();
+        let journal = Journal::create(dir.path(), Some("install"), budget.clone()).unwrap();
+        let first = "11111111-1111-4111-8111-111111111111";
+        journal.bind_server(first).unwrap();
+        journal.bind_server(first).unwrap();
+        let path = journal.path().to_path_buf();
+        drop(journal);
+        let recovered = Journal::open(&path, Some("install"), budget).unwrap();
+        recovered.bind_server(first).unwrap();
+        assert!(recovered
+            .bind_server("22222222-2222-4222-8222-222222222222")
+            .is_err());
     }
 
     #[test]
