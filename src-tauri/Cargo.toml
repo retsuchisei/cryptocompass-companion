@@ -37,7 +37,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 # The async runtime Tauri already pulls in, named here so the listener does not
 # rest on a transitive dependency staying where it is. `sync` is the sender's
 # queue waking its own task.
-tokio = { version = "1", features = ["macros", "net", "rt", "sync", "time"] }
+tokio = { version = "1", features = ["macros", "net", "rt", "sync", "time", "signal"] }
 # RFC 6455, both halves: the server the game dials, and the client that dials
 # the collector. Hand-rolling a handshake would be worse than the Python side's
 # minimal one, which exists only because that project is stdlib-only.

@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import { t } from "./i18n/index.ts";
+import {recordingProblem} from "./delivery.ts";
 import { ASK_EVERY_MS, checkForUpdate, installUpdate, shouldAsk, updateState } from "./updates.ts";
 import { MODES, type Mode } from "./modes.ts";
 import {
@@ -316,7 +317,7 @@ function App() {
         <Show when={failure()} keyed>
           {(problem) => (
             <p class="failure">
-              <span>{problem.text === PORT_IN_USE ? t().errorPortInUse : problem.text}</span>
+              <span>{problem.text === PORT_IN_USE ? t().errorPortInUse : recordingProblem(problem.text,t()) ?? problem.text}</span>
               <button
                 class="dismiss"
                 aria-label={t().dismiss}

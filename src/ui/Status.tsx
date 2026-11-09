@@ -1,12 +1,12 @@
 import { Show, type JSX } from "solid-js";
 
 import { t } from "../i18n/index.ts";
+import {deliveryLabel,recordingProblem} from "../delivery.ts";
 import type { Mode } from "../modes.ts";
 import { Trace } from "./Trace.tsx";
 import {
   recordingOf,
   type Status as AppStatus,
-  type UpstreamReport,
 } from "../state.ts";
 
 /**
@@ -35,9 +35,13 @@ export function Status(props: {
           <dt>{t().statusFrames}</dt>
           <dd>{props.status.frames}</dd>
           <dt>{t().statusUpstream}</dt>
-          <dd>{upstreamLabel(props.status.upstream)}</dd>
+          <dd>{deliveryLabel(props.status.upstream,t())}</dd>
         </dl>
       </div>
+
+      <Show when={props.status.error}>
+        <p class="failure">{recordingProblem(props.status.error,t()) ?? t().errorCapture}</p>
+      </Show>
 
       <Show when={recording().on && props.status.frames === 0}>
         <p class="note">{t().statusNoFramesHint}</p>
@@ -69,17 +73,3 @@ export function Status(props: {
   );
 }
 
-function upstreamLabel(upstream: UpstreamReport): string {
-  switch (upstream.state) {
-    case "off":
-      return t().upstreamOff;
-    case "idle":
-      return t().upstreamIdle;
-    case "connecting":
-      return t().upstreamConnecting(upstream.pending);
-    case "live":
-      return t().upstreamLive(upstream.sent, upstream.pending);
-    case "retrying":
-      return t().upstreamRetrying(upstream.retryInSeconds, upstream.pending);
-  }
-}
