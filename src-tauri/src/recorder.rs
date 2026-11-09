@@ -8,8 +8,8 @@ use chrono::Utc;
 use serde::Serialize;
 use std::io;
 use std::net::SocketAddr;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
@@ -184,6 +184,7 @@ impl Drop for Backlog {
 pub struct Recorder {
     root: PathBuf,
     running: Mutex<Option<Running>>,
+    generation: AtomicU64,
     max_journal_bytes: u64,
     last_report: Mutex<UpstreamReport>,
     last_error: Mutex<Option<&'static str>>,
@@ -226,6 +227,7 @@ impl Recorder {
         Self {
             root,
             running: Mutex::new(None),
+            generation: AtomicU64::new(0),
             max_journal_bytes: 8 * 1024 * 1024 * 1024,
             last_report: Mutex::new(UpstreamReport::quiet("off")),
             last_error: Mutex::new(None),
@@ -237,7 +239,18 @@ impl Recorder {
         collector: Option<String>,
         token: Option<String>,
     ) -> io::Result<u16> {
-        {
+        self.start_with_storage(addr, collector, token, Budget::open)
+            .await
+    }
+
+    async fn start_with_storage(
+        &self,
+        addr: SocketAddr,
+        collector: Option<String>,
+        token: Option<String>,
+        storage: impl FnOnce(&Path, u64) -> io::Result<Arc<Budget>>,
+    ) -> io::Result<u16> {
+        let generation = {
             let mut slot = self.running.lock().unwrap();
             if let Some(running) = slot.as_ref() {
                 if !running.task.is_finished() && running.session.error.lock().unwrap().is_none() {
@@ -248,11 +261,18 @@ impl Recorder {
                 old.task.abort();
                 old.session.finish();
             }
-        }
+            self.generation.load(Ordering::Acquire)
+        };
         let listener = bind(addr).await?;
         let port = listener.local_addr()?.port();
-        let budget = Budget::open(&self.root, self.max_journal_bytes)
+        let budget = storage(&self.root, self.max_journal_bytes)
             .map_err(|_| io::Error::other("local-storage-unavailable"))?;
+        if self.generation.load(Ordering::Acquire) != generation {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "recording-start-cancelled",
+            ));
+        }
         let journal = Arc::new(
             Journal::create(&self.root, token.as_deref(), budget.clone())
                 .map_err(|_| io::Error::other("local-storage-unavailable"))?,
@@ -271,6 +291,12 @@ impl Recorder {
             stopped: AtomicBool::new(false),
         });
         let mut slot = self.running.lock().unwrap();
+        if self.generation.load(Ordering::Acquire) != generation {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "recording-start-cancelled",
+            ));
+        }
         if let Some(existing) = slot.as_ref() {
             return Ok(existing.port);
         }
@@ -303,7 +329,12 @@ impl Recorder {
         Ok(port)
     }
     pub fn stop(&self) {
-        let Some(running) = self.running.lock().unwrap().take() else {
+        let running = {
+            let mut slot = self.running.lock().unwrap();
+            self.generation.fetch_add(1, Ordering::AcqRel);
+            slot.take()
+        };
+        let Some(running) = running else {
             return;
         };
         let mut report = running.session.upstream_report();
@@ -472,6 +503,67 @@ mod tests {
     use tokio::net::{TcpListener, TcpStream};
     use tokio_tungstenite::tungstenite::Message;
     use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn stop_and_unlink_cancel_a_pending_retained_history_scan() {
+        for unlink in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path().join("sessions");
+            let retained = Journal::create(
+                &root,
+                Some("original-token"),
+                Budget::open(&root, 1024 * 1024).unwrap(),
+            )
+            .unwrap();
+            retained
+                .append(Kind::Text, b"retained-private-frame")
+                .unwrap();
+            drop(retained);
+            let collector = TcpListener::bind(anywhere_on_loopback()).await.unwrap();
+            let url = format!("ws://{}/", collector.local_addr().unwrap());
+            let recorder = Arc::new(Recorder::new(root));
+            let release = Arc::new(std::sync::Barrier::new(2));
+            let (ready, waiting) = std::sync::mpsc::channel();
+            let task_recorder = recorder.clone();
+            let task_release = release.clone();
+            let pending = tokio::spawn(async move {
+                task_recorder
+                    .start_with_storage(
+                        anywhere_on_loopback(),
+                        Some(url),
+                        Some("original-token".into()),
+                        move |root, limit| {
+                            ready.send(()).unwrap();
+                            task_release.wait();
+                            Budget::open(root, limit)
+                        },
+                    )
+                    .await
+            });
+            tokio::task::spawn_blocking(move || {
+                waiting.recv_timeout(Duration::from_secs(5)).unwrap()
+            })
+            .await
+            .unwrap();
+            if unlink {
+                crate::forget_install(dir.path(), &recorder).unwrap();
+            } else {
+                recorder.stop();
+            }
+            release.wait();
+            let result = pending.await.unwrap();
+            assert!(
+                !recorder.status().recording,
+                "A cancelled start resumed recording"
+            );
+            assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Interrupted);
+            assert!(
+                tokio::time::timeout(Duration::from_millis(100), collector.accept())
+                    .await
+                    .is_err()
+            );
+        }
+    }
 
     /// Any free port on loopback, chosen by the kernel so tests do not collide.
     fn anywhere_on_loopback() -> SocketAddr {
