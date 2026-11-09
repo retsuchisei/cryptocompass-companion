@@ -1,5 +1,7 @@
 pub mod config;
+pub mod delivery;
 pub mod identity;
+pub mod journal;
 pub mod listen;
 pub mod recorder;
 pub mod session;
@@ -18,10 +20,14 @@ const LOCAL_PORT: u16 = 7777;
 
 /// Where frames go after the disk, compiled in at release time.
 ///
-/// Absent in a build made from a clone, and absent on purpose: the ingest
-/// address carries a secret path and this repository is public. Without it the
-/// app records locally and sends nothing, which is a usable app rather than a
-/// broken one.
+/// Set for release builds and absent in one made from a clone, which still
+/// records locally and sends nothing - a usable app rather than a broken one.
+///
+/// It used to be absent everywhere, because the ingest address carried a
+/// secret path and this repository is public. It does not any more: the lock
+/// is an install token, minted per install by the accounts service and never
+/// compiled into anything, and the address answers 404 to anyone who does not
+/// carry one. So a public repository may name it.
 const COLLECTOR_URL: Option<&str> = option_env!("CRYPTOCOMPASS_COLLECTOR_URL");
 
 /// The socket the recorder takes, and the address the game is told to dial.
@@ -135,10 +141,15 @@ async fn poll_pairing(
 /// page until it is switched off there - which is the honest picture: this end
 /// can forget a credential, only the server can revoke one.
 #[tauri::command]
-fn unlink(app: tauri::AppHandle) -> Result<(), String> {
+fn unlink(app: tauri::AppHandle, recorder: State<'_, Recorder>) -> Result<(), String> {
     let dir = identity_dir(&app).ok_or_else(|| "no config directory".to_string())?;
 
-    identity::forget(&dir).map_err(failure)
+    forget_install(&dir, &recorder).map_err(failure)
+}
+
+fn forget_install(dir: &std::path::Path, recorder: &Recorder) -> std::io::Result<()> {
+    recorder.stop();
+    identity::forget(dir)
 }
 
 /// The pairing in flight, if any: its poll key and the name it offered.
@@ -195,6 +206,57 @@ fn status(recorder: State<'_, Recorder>) -> AppStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn unlink_stops_recording_and_retains_its_original_journal() {
+        use futures_util::SinkExt;
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("config");
+        identity::save(
+            &config,
+            &identity::Stored {
+                token: "test-install-token".into(),
+                name: "Fixture".into(),
+            },
+        )
+        .unwrap();
+        let root = dir.path().join("recordings");
+        let recorder = Recorder::new(root.clone());
+        let port = recorder
+            .start(
+                "127.0.0.1:0".parse().unwrap(),
+                None,
+                Some("test-install-token".into()),
+            )
+            .await
+            .unwrap();
+        let (mut game, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/"))
+            .await
+            .unwrap();
+        game.send(tokio_tungstenite::tungstenite::Message::Text(
+            "owned".into(),
+        ))
+        .await
+        .unwrap();
+        for _ in 0..250 {
+            if recorder.status().frames == 1 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        assert_eq!(recorder.status().frames, 1);
+        forget_install(&config, &recorder).unwrap();
+        assert!(!recorder.status().recording);
+        assert!(identity::load(&config).is_none());
+        let scope = root
+            .join("journal-v2")
+            .join(journal::scope(Some("test-install-token")));
+        assert!(std::fs::read_dir(scope).unwrap().any(|e| e
+            .unwrap()
+            .path()
+            .extension()
+            .is_some_and(|s| s == "journal")));
+    }
 
     /// The config tells the game where to dial, and the recorder is what has
     /// to be holding that socket when it does. They are the same constant

@@ -8,9 +8,9 @@ The design and every argument behind it live in the private `apex-guideline`
 repository, at `docs/superpowers/specs/2026-08-16-companion-app-design.md`. Read
 it before changing anything structural. Nothing here repeats its reasoning.
 
-This repository is public and stands alone. It is not a submodule of
-`apex-guideline` and must not import from it - the two are kept side by side by
-hand.
+This repository is public and stands alone. The private `apex-guideline` repo
+also mounts it as `apps/companion/`, with an intentional gitlink update after a
+release. No runtime imports or private map art may cross that boundary.
 
 ## Commands
 
@@ -45,7 +45,18 @@ every tester to update before the data is usable again.
 It follows that the interface reports counts, bytes and the time of the last
 frame - never "ring 3 is closing".
 
-**The session log format is not ours to invent.** It is
+**Transport evidence is retained independently.** `journal.rs` stores exact,
+checksummed opaque frames under the original install-token digest and a stable
+client-session UUID. It fsyncs before delivery. `delivery.rs` reads a bounded
+100-frame/2MiB window, resumes from server ACK and never deletes journal data.
+The server-session ownership binding cannot change silently after restart.
+`recorder.rs` owns both current and historical upload tasks for exactly the
+recording-on lifetime; no detached drain may survive Off or unlink. A local
+write failure is an explicit recording failure, never a reason to upload first.
+Only explicit404/426 capability refusal permits v1 fallback, displayed without
+claiming durable confirmation. An expired/revoked install never downgrades.
+
+**The legacy session log format is not ours to invent.** It is
 `services/liveapi/session.py` in `apex-guideline`, byte for byte, so that
 `services/liveapi/replay.py` verifies this app unmodified. Changing the header
 line, the row shape or the `.jsonl.gz` name on close breaks that verifier, which

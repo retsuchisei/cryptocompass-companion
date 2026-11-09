@@ -17,13 +17,14 @@ export type Status = {
   frames: number;
   lastFrameAt: number | null;
   upstream: UpstreamReport;
+  error: string | null;
 };
 
 export type UpstreamReport = {
-  state: "off" | "idle" | "connecting" | "live" | "retrying";
-  /** Frames handed to the socket - not frames the collector confirmed, which
-   * nothing in v1 reports. */
+  state: "off" | "idle" | "checking" | "unlinked" | "connecting" | "durable" | "legacy" | "paused" | "retrying" | "refused" | "conflict" | "local-failure" | "incompatible";
+  /** Socket sends include retries; only confirmed counts durable receipts. */
   sent: number;
+  confirmed: number;
   pending: number;
   retryInSeconds: number;
   failures: number;

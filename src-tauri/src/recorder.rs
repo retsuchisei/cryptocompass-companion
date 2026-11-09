@@ -1,59 +1,37 @@
-//! What the switch switches: the socket the game dials, the log it is written
-//! to, and the sender that carries it onward.
-//!
-//! Nothing here starts on its own. A `Recorder` is off until `start` is
-//! called, which is what makes "recording is off on first run and after every
-//! update" true of the program rather than only of the screen.
-//!
-//! It holds the pieces together and nothing else - the wire is `listen`, the
-//! file is `session`, the network is `upstream` - so the order they run in is
-//! the one rule this module owns: the disk before the network, always.
+//! Capture is durable before delivery. The recording switch owns every task.
 
-use std::io;
-use std::net::SocketAddr;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-
-use chrono::Utc;
-use serde::Serialize;
-use tokio::task::JoinHandle;
-
+use crate::delivery::{DeliveryState, DurableUpstream};
+use crate::journal::{Budget, Journal, Kind};
 use crate::listen::{bind, serve, Frame};
 use crate::session::SessionLog;
-use crate::upstream::{Upstream, UpstreamState};
+use chrono::Utc;
+use serde::Serialize;
+use std::io;
+use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use tokio::sync::Notify;
+use tokio::task::JoinHandle;
 
-/// How long the sender is given to empty its queue when the game hangs up,
-/// polled this often. What is still waiting after that is on disk anyway, and
-/// a connection held open for a collector that is down helps nobody.
-const DRAIN_LIMIT: Duration = Duration::from_secs(5);
-const DRAIN_POLL: Duration = Duration::from_millis(50);
-
-/// What the interface is told. Counts and times, never what a frame meant.
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
     pub recording: bool,
-    /// Unix ms when recording was turned on.
     pub since: Option<i64>,
     pub session_id: Option<String>,
-    /// Frames taken from the game since recording went on. Not rows written:
-    /// an Init becomes the log's header and takes no row, and a frame that
-    /// went missing from the screen for that reason would be a bug report.
     pub frames: u64,
     pub last_frame_at: Option<i64>,
     pub upstream: UpstreamReport,
+    pub error: Option<&'static str>,
 }
 
 #[derive(Serialize, Clone, Copy)]
 #[serde(rename_all = "camelCase")]
 pub struct UpstreamReport {
-    /// `off` when no collector is configured at all - the app then records
-    /// locally and sends nothing.
     pub state: &'static str,
-    /// Frames handed to the socket. There is no acknowledgement in v1, so this
-    /// is not the same as frames the collector kept.
     pub sent: u64,
+    pub confirmed: u64,
     pub pending: usize,
     pub retry_in_seconds: u64,
     pub failures: u32,
@@ -64,47 +42,158 @@ impl UpstreamReport {
         Self {
             state,
             sent: 0,
+            confirmed: 0,
             pending: 0,
             retry_in_seconds: 0,
             failures: 0,
         }
     }
-
-    fn of(upstream: &Upstream) -> Self {
-        let pending = upstream.pending();
-
-        match upstream.state() {
-            UpstreamState::Idle => Self {
-                pending,
-                ..Self::quiet("idle")
-            },
-            UpstreamState::Connecting => Self {
-                pending,
-                ..Self::quiet("connecting")
-            },
-            UpstreamState::Live { sent } => Self {
-                sent,
-                pending,
-                ..Self::quiet("live")
-            },
-            UpstreamState::Retrying {
-                after_seconds,
-                failures,
-            } => Self {
-                pending,
-                retry_in_seconds: after_seconds,
-                failures,
-                ..Self::quiet("retrying")
-            },
+    fn of(upstream: &DurableUpstream) -> Self {
+        let state = match upstream.state() {
+            DeliveryState::Idle => "idle",
+            DeliveryState::Connecting => "connecting",
+            DeliveryState::Durable => "durable",
+            DeliveryState::Legacy => "legacy",
+            DeliveryState::Retrying => "retrying",
+            DeliveryState::Refused => "refused",
+            DeliveryState::Conflict => "conflict",
+            DeliveryState::LocalFailure => "local-failure",
+            DeliveryState::Incompatible => "incompatible",
+        };
+        Self {
+            state,
+            sent: upstream.sent(),
+            confirmed: upstream.confirmed(),
+            pending: upstream.pending() as usize,
+            retry_in_seconds: upstream.retry_seconds(),
+            failures: 0,
+        }
+    }
+    fn combine(left: Self, right: Self) -> Self {
+        const ORDER: [&str; 13] = [
+            "refused",
+            "conflict",
+            "local-failure",
+            "incompatible",
+            "retrying",
+            "legacy",
+            "connecting",
+            "checking",
+            "durable",
+            "idle",
+            "paused",
+            "unlinked",
+            "off",
+        ];
+        let rank = |state| ORDER.iter().position(|s| *s == state).unwrap_or(0);
+        let state = if rank(left.state) <= rank(right.state) {
+            left.state
+        } else {
+            right.state
+        };
+        Self {
+            state,
+            sent: left.sent.saturating_add(right.sent),
+            confirmed: left.confirmed.saturating_add(right.confirmed),
+            pending: left.pending.saturating_add(right.pending),
+            retry_in_seconds: left.retry_in_seconds.max(right.retry_in_seconds),
+            failures: left.failures.saturating_add(right.failures),
         }
     }
 }
 
-/// The switch itself. One per app, held by the window.
+struct Backlog {
+    task: JoinHandle<()>,
+    report: Arc<Mutex<UpstreamReport>>,
+}
+impl Backlog {
+    fn start(current: Arc<Journal>, budget: Arc<Budget>, url: String, token: String) -> Self {
+        let report = Arc::new(Mutex::new(UpstreamReport::quiet("checking")));
+        let progress = report.clone();
+        let task = tokio::spawn(async move {
+            let mut completed = UpstreamReport::quiet("idle");
+            let folder = current.path().parent().unwrap().to_path_buf();
+            let Ok(entries) = std::fs::read_dir(folder) else {
+                *progress.lock().unwrap() = UpstreamReport::quiet("local-failure");
+                return;
+            };
+            for entry in entries {
+                let Ok(entry) = entry else {
+                    completed.state = "local-failure";
+                    continue;
+                };
+                let path = entry.path();
+                if path == current.path() || path.extension().is_none_or(|s| s != "journal") {
+                    continue;
+                }
+                let key = token.clone();
+                let available = budget.clone();
+                let opened = tokio::task::spawn_blocking(move || {
+                    Journal::open(&path, Some(&key), available)
+                })
+                .await;
+                let Ok(Ok(old)) = opened else {
+                    completed.state = "local-failure";
+                    continue;
+                };
+                if old.has_torn_tail() {
+                    completed.state = "local-failure";
+                }
+                if old.last_seq() < 0 {
+                    continue;
+                }
+                let count = (old.last_seq() + 1) as u64;
+                let sender = DurableUpstream::start(url.clone(), token.clone(), Arc::new(old));
+                loop {
+                    let partial = UpstreamReport::of(&sender);
+                    *progress.lock().unwrap() = UpstreamReport::combine(completed, partial);
+                    let state = sender.state();
+                    let terminal = matches!(
+                        state,
+                        DeliveryState::Refused
+                            | DeliveryState::Conflict
+                            | DeliveryState::LocalFailure
+                            | DeliveryState::Incompatible
+                    );
+                    if terminal
+                        || (state == DeliveryState::Durable && sender.pending() == 0)
+                        || (state == DeliveryState::Legacy && sender.sent() >= count)
+                    {
+                        completed = UpstreamReport::combine(completed, partial);
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                }
+                let refused = sender.state() == DeliveryState::Refused;
+                drop(sender);
+                if refused {
+                    break;
+                }
+            }
+            *progress.lock().unwrap() = completed;
+        });
+        Self { task, report }
+    }
+}
+impl Drop for Backlog {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
 pub struct Recorder {
     root: PathBuf,
-    /// `None` is off, and off is where it starts.
     running: Mutex<Option<Running>>,
+    generation: AtomicU64,
+    max_journal_bytes: u64,
+    last_report: Mutex<UpstreamReport>,
+    last_error: Mutex<Option<&'static str>>,
+}
+
+impl Drop for Recorder {
+    fn drop(&mut self) {
+        self.stop();
+    }
 }
 
 struct Running {
@@ -113,24 +202,20 @@ struct Running {
     task: JoinHandle<()>,
     session: Arc<Session>,
 }
-
-/// Everything one recording owns, shared with the task that fills it.
 struct Session {
     root: PathBuf,
     collector: Option<String>,
-    /// The install token, when this install has been linked. `None` means the
-    /// collector will refuse us, which is the correct outcome rather than a
-    /// case to work around: an unlinked install records to disk and sends
-    /// nothing.
     token: Option<String>,
-    /// `None` until the game's first frame: a probe that connects and leaves
-    /// should not litter the directory.
+    journal: Arc<Journal>,
     log: Mutex<Option<SessionLog>>,
-    upstream: Mutex<Option<Upstream>>,
+    upstream: Mutex<Option<DurableUpstream>>,
+    backlog: Mutex<Option<Backlog>>,
     counters: Mutex<Counters>,
+    error: Mutex<Option<&'static str>>,
+    failed: Notify,
+    stopped: AtomicBool,
 }
-
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct Counters {
     session_id: Option<String>,
     frames: u64,
@@ -142,230 +227,267 @@ impl Recorder {
         Self {
             root,
             running: Mutex::new(None),
+            generation: AtomicU64::new(0),
+            max_journal_bytes: 8 * 1024 * 1024 * 1024,
+            last_report: Mutex::new(UpstreamReport::quiet("off")),
+            last_error: Mutex::new(None),
         }
     }
-
-    /// Take the socket the game dials and start writing what arrives.
-    /// Returns the port taken, which is the kernel's choice when `addr` names
-    /// port 0. Call it from inside a tokio runtime; Tauri's is one.
-    ///
-    /// Starting an already started recorder changes nothing and reports the
-    /// port it already holds.
     pub async fn start(
         &self,
         addr: SocketAddr,
         collector: Option<String>,
         token: Option<String>,
     ) -> io::Result<u16> {
-        if let Some(running) = self.running.lock().unwrap().as_ref() {
-            return Ok(running.port);
-        }
+        self.start_with_storage(addr, collector, token, Budget::open)
+            .await
+    }
 
+    async fn start_with_storage(
+        &self,
+        addr: SocketAddr,
+        collector: Option<String>,
+        token: Option<String>,
+        storage: impl FnOnce(&Path, u64) -> io::Result<Arc<Budget>>,
+    ) -> io::Result<u16> {
+        let generation = {
+            let mut slot = self.running.lock().unwrap();
+            if let Some(running) = slot.as_ref() {
+                if !running.task.is_finished() && running.session.error.lock().unwrap().is_none() {
+                    return Ok(running.port);
+                }
+            }
+            if let Some(old) = slot.take() {
+                old.task.abort();
+                old.session.finish();
+            }
+            self.generation.load(Ordering::Acquire)
+        };
         let listener = bind(addr).await?;
         let port = listener.local_addr()?.port();
+        let budget = storage(&self.root, self.max_journal_bytes)
+            .map_err(|_| io::Error::other("local-storage-unavailable"))?;
+        if self.generation.load(Ordering::Acquire) != generation {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "recording-start-cancelled",
+            ));
+        }
+        let journal = Arc::new(
+            Journal::create(&self.root, token.as_deref(), budget.clone())
+                .map_err(|_| io::Error::other("local-storage-unavailable"))?,
+        );
         let session = Arc::new(Session {
             root: self.root.clone(),
             collector,
             token,
+            journal,
             log: Mutex::new(None),
             upstream: Mutex::new(None),
+            backlog: Mutex::new(None),
             counters: Mutex::new(Counters::default()),
+            error: Mutex::new(None),
+            failed: Notify::new(),
+            stopped: AtomicBool::new(false),
         });
-
-        let sink = session.clone();
-        // Checked again now the lock is held and cannot be awaited across: two
-        // presses landing on two runtime threads must not leave two listeners.
-        let mut running = self.running.lock().unwrap();
-
-        if let Some(existing) = running.as_ref() {
+        let mut slot = self.running.lock().unwrap();
+        if self.generation.load(Ordering::Acquire) != generation {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "recording-start-cancelled",
+            ));
+        }
+        if let Some(existing) = slot.as_ref() {
             return Ok(existing.port);
         }
-
+        if let (Some(url), Some(token)) = (&session.collector, &session.token) {
+            *session.backlog.lock().unwrap() = Some(Backlog::start(
+                session.journal.clone(),
+                budget,
+                url.clone(),
+                token.clone(),
+            ));
+        }
+        let task_session = session.clone();
+        let sink = session.clone();
         let task = tokio::spawn(async move {
-            // `serve` returns only if the socket itself fails. Stopping is the
-            // other way out, and it aborts this task.
-            if let Err(error) = serve(listener, move |frame| sink.on_frame(frame)).await {
-                eprintln!("the listener stopped: {error}");
+            tokio::select! {
+                result = serve(listener,move |frame| sink.on_frame(frame)) => {
+                    if result.is_err() { task_session.fail("capture-unavailable"); }
+                },
+                _ = task_session.failed.notified() => {},
             }
+            task_session.finish();
         });
-
-        *running = Some(Running {
+        *self.last_error.lock().unwrap() = None;
+        *slot = Some(Running {
             port,
             since: now_ms(),
             task,
             session,
         });
-
         Ok(port)
     }
-
-    /// Off, and off means off: the socket is given back, the log is finished
-    /// and the sender hangs up with whatever it was still holding. The person
-    /// at the keyboard said stop, so nothing goes upstream after this.
     pub fn stop(&self) {
-        let Some(running) = self.running.lock().unwrap().take() else {
+        let running = {
+            let mut slot = self.running.lock().unwrap();
+            self.generation.fetch_add(1, Ordering::AcqRel);
+            slot.take()
+        };
+        let Some(running) = running else {
             return;
         };
-
-        // The listening socket is owned by the task, so aborting it is what
-        // frees the port.
+        let mut report = running.session.upstream_report();
+        if report.state != "off" && report.state != "unlinked" {
+            report.state = "paused";
+        }
+        *self.last_report.lock().unwrap() = report;
+        // No detached tail drain: both capture and delivery belong to this switch.
         running.task.abort();
         running.session.finish();
+        *self.last_error.lock().unwrap() = *running.session.error.lock().unwrap();
     }
-
     pub fn status(&self) -> Status {
-        let held = self.running.lock().unwrap();
-
-        let Some(running) = held.as_ref() else {
+        let slot = self.running.lock().unwrap();
+        let Some(running) = slot.as_ref() else {
             return Status {
                 recording: false,
                 since: None,
                 session_id: None,
                 frames: 0,
                 last_frame_at: None,
-                upstream: UpstreamReport::quiet("off"),
+                upstream: *self.last_report.lock().unwrap(),
+                error: *self.last_error.lock().unwrap(),
             };
         };
-
-        let counters = running.session.counters.lock().unwrap();
-
+        let counters = running.session.counters.lock().unwrap().clone();
+        let error = *running.session.error.lock().unwrap();
         Status {
-            recording: true,
+            recording: !running.task.is_finished() && error.is_none(),
             since: Some(running.since),
-            session_id: counters.session_id.clone(),
+            session_id: counters.session_id,
             frames: counters.frames,
             last_frame_at: counters.last_frame_at,
             upstream: running.session.upstream_report(),
+            error,
         }
     }
 }
 
 impl Session {
+    fn fail(&self, code: &'static str) {
+        self.stopped.store(true, Ordering::Release);
+        *self.error.lock().unwrap() = Some(code);
+        drop(self.upstream.lock().unwrap().take());
+        drop(self.backlog.lock().unwrap().take());
+        self.failed.notify_one();
+    }
     fn on_frame(&self, frame: Frame) {
-        match frame {
-            Frame::Text(text) => {
-                // The disk first and the network second, in that order and not
-                // the other way round: a collector that is down must cost the
-                // match nothing.
-                self.write(|log| log.write_text(&text));
-                self.count();
-                self.forward(text);
-            }
-            // Not forwarded: a binary frame is one this stack cannot read, and
-            // the local row says as much without decoding it.
-            Frame::Binary(bytes) => {
-                self.write(|log| log.write_binary(bytes.len()));
-                self.count();
-            }
-            Frame::Closed => self.end_of_connection(),
-        }
-    }
-
-    /// Write one row, opening the log - and minting the session id - on the
-    /// first frame of a connection.
-    fn write(&self, row: impl FnOnce(&mut SessionLog) -> io::Result<()>) {
-        let mut held = self.log.lock().unwrap();
-
-        if held.is_none() {
-            let session_id = new_session_id();
-
-            match SessionLog::create(&self.root, &session_id) {
-                Ok(log) => {
-                    self.counters.lock().unwrap().session_id = Some(session_id);
-                    *held = Some(log);
-                }
-                Err(error) => {
-                    // Recording carries on: the upload is still worth having,
-                    // and the alternative is a panic that takes the listener
-                    // with it.
-                    eprintln!("no session log in {}: {error}", self.root.display());
-                    return;
-                }
-            }
-        }
-
-        if let Err(error) = row(held.as_mut().expect("the log was just opened")) {
-            eprintln!("session log: {error}");
-        }
-    }
-
-    fn count(&self) {
-        let mut counters = self.counters.lock().unwrap();
-        counters.frames += 1;
-        counters.last_frame_at = Some(now_ms());
-    }
-
-    fn forward(&self, text: String) {
-        let Some(url) = &self.collector else {
+        if self.stopped.load(Ordering::Acquire) || self.error.lock().unwrap().is_some() {
             return;
+        }
+        let result = match frame {
+            Frame::Text(text) => {
+                self.capture(Kind::Text, text.as_bytes(), |log| log.write_text(&text))
+            }
+            Frame::Binary(bytes) => {
+                self.capture(Kind::Binary, &bytes, |log| log.write_binary(bytes.len()))
+            }
+            Frame::Closed => {
+                self.close_log();
+                return;
+            }
+            Frame::Failure(code) => {
+                self.fail(code);
+                return;
+            }
         };
-
-        self.upstream
+        if result.is_err() {
+            self.fail("local-write-failed");
+        }
+    }
+    fn capture(
+        &self,
+        kind: Kind,
+        bytes: &[u8],
+        row: impl FnOnce(&mut SessionLog) -> io::Result<()>,
+    ) -> io::Result<()> {
+        if self.stopped.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        self.journal.append(kind, bytes)?;
+        self.write(row)?;
+        {
+            let mut counters = self.counters.lock().unwrap();
+            counters.frames += 1;
+            counters.last_frame_at = Some(now_ms());
+        }
+        if let (Some(url), Some(token)) = (&self.collector, &self.token) {
+            let mut sender = self.upstream.lock().unwrap();
+            if !self.stopped.load(Ordering::Acquire) {
+                sender
+                    .get_or_insert_with(|| {
+                        DurableUpstream::start(url.clone(), token.clone(), self.journal.clone())
+                    })
+                    .wake();
+            }
+        }
+        Ok(())
+    }
+    fn write(&self, row: impl FnOnce(&mut SessionLog) -> io::Result<()>) -> io::Result<()> {
+        let mut log = self.log.lock().unwrap();
+        if log.is_none() {
+            let id = new_session_id();
+            *log = Some(SessionLog::create(&self.root, &id)?);
+            self.counters.lock().unwrap().session_id = Some(id);
+        }
+        row(log.as_mut().unwrap())
+    }
+    fn finish(&self) {
+        self.stopped.store(true, Ordering::Release);
+        drop(self.upstream.lock().unwrap().take());
+        drop(self.backlog.lock().unwrap().take());
+        self.close_log();
+    }
+    fn close_log(&self) {
+        if let Some(log) = self.log.lock().unwrap().take() {
+            if log.close().is_err() {
+                self.fail("local-write-failed");
+            }
+        }
+    }
+    fn upstream_report(&self) -> UpstreamReport {
+        let state = if self.collector.is_none() {
+            "off"
+        } else if self.token.is_none() {
+            "unlinked"
+        } else {
+            "idle"
+        };
+        let current = self
+            .upstream
             .lock()
             .unwrap()
-            .get_or_insert_with(|| Upstream::start(url.clone(), self.token.clone()))
-            .send(text);
-    }
-
-    /// The game hung up. The log is finished here rather than at stop, because
-    /// a session log covers one connection - and so does the collector's, so
-    /// the upload ends with it too.
-    fn end_of_connection(&self) {
-        self.close_log();
-
-        if let Some(sender) = self.upstream.lock().unwrap().take() {
-            // Dropping the handle hangs up, so the end of the match is given
-            // its moment to leave first.
-            tokio::spawn(async move {
-                for _ in 0..(DRAIN_LIMIT.as_millis() / DRAIN_POLL.as_millis()) {
-                    if sender.pending() == 0 {
-                        break;
-                    }
-
-                    tokio::time::sleep(DRAIN_POLL).await;
-                }
+            .as_ref()
+            .map(UpstreamReport::of)
+            .unwrap_or_else(|| {
+                let mut report = UpstreamReport::quiet(state);
+                report.pending = (self.journal.last_seq() + 1) as usize;
+                report
             });
-        }
-    }
-
-    fn finish(&self) {
-        self.close_log();
-        drop(self.upstream.lock().unwrap().take());
-    }
-
-    fn close_log(&self) {
-        let Some(log) = self.log.lock().unwrap().take() else {
-            return;
-        };
-
-        match log.close() {
-            Ok(path) => println!("wrote {}", path.display()),
-            // Including the ordinary case of a connection that carried
-            // nothing, which has no file to name.
-            Err(error) => eprintln!("session not written: {error}"),
-        }
-    }
-
-    fn upstream_report(&self) -> UpstreamReport {
-        if self.collector.is_none() {
-            return UpstreamReport::quiet("off");
-        }
-
-        match self.upstream.lock().unwrap().as_ref() {
-            // Configured, but the collector is not dialled until there is
-            // something to carry.
-            None => UpstreamReport::quiet("idle"),
-            Some(upstream) => UpstreamReport::of(upstream),
-        }
+        let backlog = self
+            .backlog
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|backlog| *backlog.report.lock().unwrap())
+            .unwrap_or_else(|| UpstreamReport::quiet("off"));
+        UpstreamReport::combine(current, backlog)
     }
 }
-
-/// The app mints it, not the server, so the local file and the uploaded stream
-/// can be matched up by hand.
 fn new_session_id() -> String {
     Utc::now().format("%Y%m%dT%H%M%S%.3f").to_string()
 }
-
 fn now_ms() -> i64 {
     Utc::now().timestamp_millis()
 }
@@ -381,6 +503,67 @@ mod tests {
     use tokio::net::{TcpListener, TcpStream};
     use tokio_tungstenite::tungstenite::Message;
     use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn stop_and_unlink_cancel_a_pending_retained_history_scan() {
+        for unlink in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path().join("sessions");
+            let retained = Journal::create(
+                &root,
+                Some("original-token"),
+                Budget::open(&root, 1024 * 1024).unwrap(),
+            )
+            .unwrap();
+            retained
+                .append(Kind::Text, b"retained-private-frame")
+                .unwrap();
+            drop(retained);
+            let collector = TcpListener::bind(anywhere_on_loopback()).await.unwrap();
+            let url = format!("ws://{}/", collector.local_addr().unwrap());
+            let recorder = Arc::new(Recorder::new(root));
+            let release = Arc::new(std::sync::Barrier::new(2));
+            let (ready, waiting) = std::sync::mpsc::channel();
+            let task_recorder = recorder.clone();
+            let task_release = release.clone();
+            let pending = tokio::spawn(async move {
+                task_recorder
+                    .start_with_storage(
+                        anywhere_on_loopback(),
+                        Some(url),
+                        Some("original-token".into()),
+                        move |root, limit| {
+                            ready.send(()).unwrap();
+                            task_release.wait();
+                            Budget::open(root, limit)
+                        },
+                    )
+                    .await
+            });
+            tokio::task::spawn_blocking(move || {
+                waiting.recv_timeout(Duration::from_secs(5)).unwrap()
+            })
+            .await
+            .unwrap();
+            if unlink {
+                crate::forget_install(dir.path(), &recorder).unwrap();
+            } else {
+                recorder.stop();
+            }
+            release.wait();
+            let result = pending.await.unwrap();
+            assert!(
+                !recorder.status().recording,
+                "A cancelled start resumed recording"
+            );
+            assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Interrupted);
+            assert!(
+                tokio::time::timeout(Duration::from_millis(100), collector.accept())
+                    .await
+                    .is_err()
+            );
+        }
+    }
 
     /// Any free port on loopback, chosen by the kernel so tests do not collide.
     fn anywhere_on_loopback() -> SocketAddr {
@@ -425,6 +608,8 @@ mod tests {
     fn files_in(dir: &std::path::Path) -> Vec<String> {
         std::fs::read_dir(dir)
             .unwrap()
+            // This helper checks legacy exports; durable journals are nested.
+            .filter(|entry| entry.as_ref().is_ok_and(|entry| entry.path().is_file()))
             .map(|entry| entry.unwrap().file_name().to_string_lossy().to_string())
             .collect()
     }
@@ -446,6 +631,279 @@ mod tests {
             files_in(dir.path()).is_empty(),
             "a recorder that was never on wrote something"
         );
+    }
+
+    #[tokio::test]
+    async fn dropping_the_recorder_stops_its_owned_listener() {
+        let dir = tempfile::tempdir().unwrap();
+        let recorder = Recorder::new(dir.path().to_path_buf());
+        let port = recorder
+            .start(anywhere_on_loopback(), None, None)
+            .await
+            .unwrap();
+        drop(recorder);
+        assert!(
+            eventually_refused(port).await,
+            "Recorder destruction detached its active listener"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_late_capture_callback_cannot_restart_writing_after_recording_off() {
+        let dir = tempfile::tempdir().unwrap();
+        let recorder = Recorder::new(dir.path().to_path_buf());
+        recorder
+            .start(anywhere_on_loopback(), None, None)
+            .await
+            .unwrap();
+        let session = recorder
+            .running
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .session
+            .clone();
+        recorder.stop();
+        let before = session.journal.last_seq();
+        session.on_frame(Frame::Text("late callback".into()));
+        assert_eq!(
+            session.journal.last_seq(),
+            before,
+            "Recording off admitted a late capture callback"
+        );
+        assert!(session.upstream.lock().unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn stopping_recording_retains_exact_install_scoped_journal_frames() {
+        use crate::journal::{scope, Budget, Journal};
+        let dir = tempfile::tempdir().unwrap();
+        let recorder = Recorder::new(dir.path().to_path_buf());
+        let port = recorder
+            .start(
+                anywhere_on_loopback(),
+                None,
+                Some("original-install".into()),
+            )
+            .await
+            .unwrap();
+        let mut game = game_connects(port).await;
+        game.send(Message::Text("{ \"future\": 1 }".into()))
+            .await
+            .unwrap();
+        game.send(Message::Binary(vec![0, 255].into()))
+            .await
+            .unwrap();
+        assert!(within(5, || recorder.status().frames == 2).await);
+        recorder.stop();
+        assert!(eventually_refused(port).await);
+        let folder = dir
+            .path()
+            .join("journal-v2")
+            .join(scope(Some("original-install")));
+        let path = std::fs::read_dir(folder)
+            .unwrap()
+            .map(|p| p.unwrap().path())
+            .find(|p| p.extension().is_some_and(|s| s == "journal"))
+            .unwrap();
+        let budget = Budget::open(dir.path(), 8 * 1024 * 1024).unwrap();
+        let saved = Journal::open(&path, Some("original-install"), budget).unwrap();
+        let frames = saved.reader(0).unwrap().batch().unwrap();
+        assert_eq!(frames[0].data, b"{ \"future\": 1 }");
+        assert_eq!(frames[1].data, vec![0, 255]);
+        assert!(!recorder.status().recording);
+    }
+
+    #[tokio::test]
+    async fn local_journal_failure_stops_capture_and_never_forwards_the_failed_frame() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut recorder = Recorder::new(dir.path().to_path_buf());
+        recorder.max_journal_bytes = 750;
+        let port = recorder
+            .start(anywhere_on_loopback(), None, None)
+            .await
+            .unwrap();
+        let mut game = game_connects(port).await;
+        game.send(Message::Text("owned".into())).await.unwrap();
+        assert!(within(5, || recorder.status().frames == 1).await);
+        game.send(Message::Binary(vec![42; 4096].into()))
+            .await
+            .unwrap();
+        assert!(within(5, || !recorder.status().recording).await);
+        assert_eq!(recorder.status().error, Some("local-write-failed"));
+        assert_eq!(recorder.status().frames, 1);
+        assert!(eventually_refused(port).await);
+        recorder.stop();
+    }
+
+    #[tokio::test]
+    async fn export_close_failure_stops_capture_and_survives_recording_off() {
+        for close_game in [true, false] {
+            let dir = tempfile::tempdir().unwrap();
+            let recorder = Recorder::new(dir.path().to_path_buf());
+            let port = recorder
+                .start(anywhere_on_loopback(), None, None)
+                .await
+                .unwrap();
+            let mut game = game_connects(port).await;
+            game.send(Message::Text("owned".into())).await.unwrap();
+            assert!(within(5, || recorder.status().frames == 1).await);
+            let id = recorder.status().session_id.unwrap();
+            std::fs::create_dir(dir.path().join(format!("{id}.jsonl.gz"))).unwrap();
+            if close_game {
+                game.close(None).await.unwrap();
+                assert!(within(5, || recorder.status().error.is_some()).await);
+                assert!(
+                    eventually_refused(port).await,
+                    "Export failure left the capture listener alive"
+                );
+            }
+            recorder.stop();
+            assert_eq!(
+                recorder.status().error,
+                Some("local-write-failed"),
+                "Recording off hid its file failure"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn recording_off_cancels_upload_even_after_the_game_disconnected() {
+        use serde_json::{json, Value};
+        use tokio::sync::Notify;
+        let dir = tempfile::tempdir().unwrap();
+        let recorder = Recorder::new(dir.path().to_path_buf());
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}/", listener.local_addr().unwrap());
+        let received = Arc::new(Notify::new());
+        let seen = received.clone();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            let resume: Value =
+                serde_json::from_str(ws.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+            let id = resume["clientSessionId"]
+                .as_str()
+                .expect("v2 resume must precede source frames");
+            ws.send(Message::Text(
+                json!({"protocolVersion":2,"type":"ready","clientSessionId":id,
+                "serverSessionId":"11111111-1111-4111-8111-111111111111","contiguousSeq":-1,
+                "durability":"local-fsync-pg-commit","limits":{"frameBytes":1048576,
+                "batchBytes":2097152,"batchFrames":100,"flushMs":250}})
+                .to_string()
+                .into(),
+            ))
+            .await
+            .unwrap();
+            let batch: Value =
+                serde_json::from_str(ws.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+            assert_eq!(batch["frames"].as_array().unwrap().len(), 1);
+            seen.notify_one();
+            // Withhold ACK: pending work must remain owned by the recording switch.
+            assert!(
+                tokio::time::timeout(Duration::from_secs(2), ws.next())
+                    .await
+                    .is_ok(),
+                "Upload survived recording off as a detached drain task"
+            );
+        });
+        let port = recorder
+            .start(
+                anywhere_on_loopback(),
+                Some(url),
+                Some("recording-install-token".into()),
+            )
+            .await
+            .unwrap();
+        let mut game = game_connects(port).await;
+        game.send(Message::Text("opaque".into())).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), received.notified())
+            .await
+            .unwrap();
+        game.close(None).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        recorder.stop();
+        server.await.unwrap();
+        assert!(!recorder.status().recording);
+    }
+
+    #[tokio::test]
+    async fn saved_backlog_resumes_only_after_explicit_recording_consent_with_the_same_install() {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        use serde_json::{json, Value};
+        let dir = tempfile::tempdir().unwrap();
+        let recorder = Recorder::new(dir.path().to_path_buf());
+        let port = recorder
+            .start(
+                anywhere_on_loopback(),
+                None,
+                Some("test-install-token".into()),
+            )
+            .await
+            .unwrap();
+        let mut game = game_connects(port).await;
+        game.send(Message::Text("saved offline".into()))
+            .await
+            .unwrap();
+        assert!(within(5, || recorder.status().frames == 1).await);
+        recorder.stop();
+        let collector = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}/", collector.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (stream, _) = collector.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            let resume: Value =
+                serde_json::from_str(ws.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+            let id = resume["clientSessionId"].as_str().unwrap();
+            let peer = "11111111-1111-4111-8111-111111111111";
+            ws.send(Message::Text(json!({"protocolVersion":2,"type":"ready","clientSessionId":id,
+                "serverSessionId":peer,"contiguousSeq":-1,"durability":"local-fsync-pg-commit",
+                "limits":{"frameBytes":1048576,"batchBytes":2097152,"batchFrames":100,"flushMs":250}}).to_string().into())).await.unwrap();
+            let batch: Value =
+                serde_json::from_str(ws.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+            assert_eq!(
+                STANDARD
+                    .decode(batch["frames"][0]["data"].as_str().unwrap())
+                    .unwrap(),
+                b"saved offline"
+            );
+            ws.send(Message::Text(
+                json!({"protocolVersion":2,"type":"ack","clientSessionId":id,
+                "serverSessionId":peer,"contiguousSeq":0})
+                .to_string()
+                .into(),
+            ))
+            .await
+            .unwrap();
+        });
+        // A different install must not upload the old scope even with consent.
+        recorder
+            .start(
+                anywhere_on_loopback(),
+                Some(url.clone()),
+                Some("different-install-token".into()),
+            )
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!server.is_finished());
+        assert_eq!(recorder.status().upstream.sent, 0);
+        recorder.stop();
+        recorder
+            .start(
+                anywhere_on_loopback(),
+                Some(url),
+                Some("test-install-token".into()),
+            )
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), server)
+            .await
+            .expect("Saved backlog never resumed")
+            .unwrap();
+        assert!(within(5, || recorder.status().upstream.confirmed == 1).await);
+        recorder.stop();
     }
 
     #[tokio::test]
@@ -533,17 +991,46 @@ mod tests {
             let (stream, _) = collector.accept().await.unwrap();
             let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
 
-            while let Some(Ok(message)) = ws.next().await {
-                if let Message::Text(text) = message {
-                    received.lock().unwrap().push(text.to_string());
+            use base64::{engine::general_purpose::STANDARD, Engine};
+            use serde_json::{json, Value};
+            let resume: Value =
+                serde_json::from_str(ws.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+            let id = resume["clientSessionId"].as_str().unwrap();
+            let peer = "11111111-1111-4111-8111-111111111111";
+            ws.send(Message::Text(json!({"protocolVersion":2,"type":"ready","clientSessionId":id,
+                "serverSessionId":peer,"contiguousSeq":-1,"durability":"local-fsync-pg-commit",
+                "limits":{"frameBytes":1048576,"batchBytes":2097152,"batchFrames":100,"flushMs":250}}).to_string().into())).await.unwrap();
+            while let Some(Ok(Message::Text(text))) = ws.next().await {
+                let batch: Value = serde_json::from_str(&text).unwrap();
+                for frame in batch["frames"].as_array().unwrap() {
+                    let raw = STANDARD.decode(frame["data"].as_str().unwrap()).unwrap();
+                    received
+                        .lock()
+                        .unwrap()
+                        .push(String::from_utf8(raw).unwrap());
                 }
+                let seq = batch["frames"].as_array().unwrap().last().unwrap()["seq"]
+                    .as_i64()
+                    .unwrap();
+                ws.send(Message::Text(
+                    json!({"protocolVersion":2,"type":"ack","clientSessionId":id,
+                    "serverSessionId":peer,"contiguousSeq":seq})
+                    .to_string()
+                    .into(),
+                ))
+                .await
+                .unwrap();
             }
         });
 
         let dir = tempfile::tempdir().unwrap();
         let recorder = Recorder::new(dir.path().to_path_buf());
         let port = recorder
-            .start(anywhere_on_loopback(), Some(url), None)
+            .start(
+                anywhere_on_loopback(),
+                Some(url),
+                Some("test-install-token".into()),
+            )
             .await
             .unwrap();
 
@@ -552,9 +1039,8 @@ mod tests {
             game.send(Message::Text(frame.into())).await.unwrap();
         }
 
-        // The game hanging up ends the upload with it, because the collector
-        // writes one file per connection. What is still queued at that moment
-        // is the end of a match, and it goes before the link does.
+        // A game disconnect closes its legacy export, while authorized
+        // durable delivery remains owned by the recording switch.
         game.close(None).await.unwrap();
 
         assert!(

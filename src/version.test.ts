@@ -68,3 +68,9 @@ test("one version, declared in three places", () => {
 
   assert.deepEqual(disagreements(declared), [], `not on ${declared[0].version}`);
 });
+
+test("released builds pair and upload through the active placement domain",()=>{
+  assert.match(manifest("src-tauri/src/identity.rs"),/unwrap_or\("https:\/\/placement\.gg"\)/);
+  assert.match(manifest(".github/workflows/release.yml"),/CRYPTOCOMPASS_COLLECTOR_URL: wss:\/\/ws\.placement\.gg\//);
+  assert.doesNotMatch(manifest(".github/workflows/release.yml"),/ws\.cryptocompass\.tech/);
+});

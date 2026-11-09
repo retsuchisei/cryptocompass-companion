@@ -35,9 +35,11 @@ function idleStatus(): Status {
     sessionId: null,
     frames: 0,
     lastFrameAt: null,
+    error: null,
     upstream: {
       state: "off",
       sent: 0,
+      confirmed: 0,
       pending: 0,
       retryInSeconds: 0,
       failures: 0,

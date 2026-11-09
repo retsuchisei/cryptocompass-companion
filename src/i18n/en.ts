@@ -40,6 +40,9 @@ export const en = {
   dismiss: "Dismiss",
   errorPortInUse:
     "Port 7777 is already taken, so the game has nowhere to connect. Another copy of this app is the usual reason - close it and try again.",
+  errorLocalWrite: "Recording stopped: local files could not be saved. Check disk space and start again.",
+  errorCapture: "The local recorder stopped. Check the game connection and start recording again.",
+  errorCaptureFrame: "Recording stopped because a game frame exceeded the supported size. Earlier recordings are saved.",
   navSettings: "Settings",
   settingsLanguage: "Language",
   settingsSeat: "Seat",
@@ -53,7 +56,8 @@ export const en = {
   consentLobby:
     "The LiveAPI stream describes the whole lobby, not only you: match events and what every player in it does. Turning recording on sends their data too.",
   consentLocalFirst:
-    "Every frame is written to this computer first and goes to our server afterwards. Ring data is built out of those recordings.",
+    "Frames are saved on this computer before upload. New recordings are private to your account.",
+  consentResume: "Turning recording on also resumes saved recordings for this install. Turning it off stops uploads and keeps the local files.",
   consentOffUntil:
     "Recording stays off until you press the button below. After every update the app asks again.",
   consentCustomOnly:
@@ -68,7 +72,7 @@ export const en = {
   statusNoFrameYet: "none yet",
   statusSession: "Session",
   statusNoSession: "not started",
-  statusUpstream: "Sent to us",
+  statusUpstream: "Upload",
   statusNoFramesHint:
     "No frames yet. The game sends them only in a custom match, and only if LiveAPI is enabled in its launch options.",
   statusOrganiserNote:
@@ -77,8 +81,17 @@ export const en = {
   statusStop: "Stop recording",
   statusVersion: (version: string) => `version ${version}`,
 
-  upstreamOff: "nowhere - this build keeps everything on your computer",
+  upstreamOff: "uploads are off; local files are kept",
   upstreamIdle: "nothing yet",
+  upstreamChecking: "checking saved recordings",
+  upstreamUnlinked: "saved locally; link this app to upload new recordings",
+  upstreamConfirmed: (confirmed:number,pending:number) => `${confirmed} confirmed, ${pending} waiting`,
+  upstreamLegacy: (sent:number,confirmed:number,pending:number) => `${sent} sent, ${confirmed} confirmed; this server gives no receipt. ${pending} kept locally.`,
+  upstreamPaused: (pending:number) => `paused; ${pending} frames awaiting confirmation. Local files are kept.`,
+  upstreamRefused: "Upload access was refused. Check the linked install on your account; local files are kept.",
+  upstreamConflict: "Upload paused because recording data conflicts with the server. Local files are kept.",
+  upstreamLocalFailure: "Some saved recordings could not be read or uploaded. Local files are kept for recovery.",
+  upstreamIncompatible: "The server cannot confirm this recording format. Local files are kept.",
   upstreamConnecting: (queued: number) =>
     queued > 0 ? `connecting, ${queued} waiting` : "connecting",
   // Sent, not delivered: v1 has no acknowledgement, so a frame handed over

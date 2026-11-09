@@ -18,6 +18,7 @@ export function Consent(props: { onAccept: () => void }): JSX.Element {
       </div>
       <div class="card">
         <p>{t().consentLocalFirst}</p>
+        <p>{t().consentResume}</p>
       </div>
       <div class="card">
         <p>{t().consentOffUntil}</p>
