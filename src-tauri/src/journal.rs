@@ -493,8 +493,22 @@ fn install(pending: &Path, path: &Path) -> io::Result<()> {
 fn install(pending: &Path, path: &Path) -> io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_WRITE_THROUGH};
-    let from: Vec<u16> = pending.as_os_str().encode_wide().chain(Some(0)).collect();
-    let to: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    // Rust canonicalization supplies the extended-length Windows path prefix.
+    let source = fs::canonicalize(pending)?;
+    let destination = fs::canonicalize(
+        path.parent()
+            .ok_or_else(|| invalid("Invalid journal path"))?,
+    )?
+    .join(
+        path.file_name()
+            .ok_or_else(|| invalid("Invalid journal name"))?,
+    );
+    let from: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
+    let to: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
     // Both pointers are owned, NUL-terminated UTF-16 buffers for this call.
     // No REPLACE_EXISTING: an owned journal must never overwrite another file.
     if unsafe { MoveFileExW(from.as_ptr(), to.as_ptr(), MOVEFILE_WRITE_THROUGH) } == 0 {
