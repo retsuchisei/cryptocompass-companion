@@ -1,5 +1,6 @@
 pub mod config;
 pub mod identity;
+pub mod journal;
 pub mod listen;
 pub mod recorder;
 pub mod session;

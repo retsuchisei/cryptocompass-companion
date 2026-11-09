@@ -62,6 +62,12 @@ tauri-plugin-process = "2.3.1"
 # One window, because two would race for 127.0.0.1:7777 and the second would
 # always lose - which is exactly the failure a tester hit and could not read.
 tauri-plugin-single-instance = "2.4.3"
+sha2 = "=0.10.9"
+base64 = "=0.22.1"
+uuid = { version = "=1.24.1", features = ["v4"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }
 
 [dev-dependencies]
 # The session tests write real files. The format is bytes on disk, so a fake

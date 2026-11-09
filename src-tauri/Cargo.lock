@@ -634,12 +634,14 @@ dependencies = [
 name = "cryptocompass-companion"
 version = "0.1.9"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "flate2",
  "futures-util",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
@@ -649,6 +651,8 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-tungstenite",
+ "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
