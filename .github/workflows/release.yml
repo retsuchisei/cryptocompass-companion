@@ -56,7 +56,7 @@ jobs:
           # an install token, which is per-install, minted by the accounts
           # service and never in a build. Anyone reading this gets a hostname
           # that answers 404 without one.
-          CRYPTOCOMPASS_COLLECTOR_URL: wss://ws.cryptocompass.tech/
+          CRYPTOCOMPASS_COLLECTOR_URL: wss://ws.placement.gg/
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           # The key has no passphrase, and the variable is still required:
           # 2.11 prompts for one when it is unset, which on a runner is

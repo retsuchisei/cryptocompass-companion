@@ -19,11 +19,10 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-/// Where pairing happens. Not a secret - unlike the collector's address - so it
-/// has a default and a build made from a clone can still link itself.
+/// The public account service. Install credentials remain in native storage.
 pub fn site() -> String {
     option_env!("CRYPTOCOMPASS_SITE_URL")
-        .unwrap_or("https://cryptocompass.tech")
+        .unwrap_or("https://placement.gg")
         .trim_end_matches('/')
         .to_string()
 }
